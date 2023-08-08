@@ -1,0 +1,1 @@
+"F:\UE\UE_5.2\Engine\Binaries\Win64\UnrealEditor.exe" "C:\Users\sasha\OneDrive\Documents\Unreal Projects\Proto_Game_2\StudyGame.uproject" -game
