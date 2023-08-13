@@ -85,3 +85,7 @@ Content/InfinityBladeWeapons/*
 Content/ThirdParty/*
 Content/Weapon/*
 Plugins/Developer/*
+
+StartGame.bat
+StartServer.bat
+DedicatedServer.bat
