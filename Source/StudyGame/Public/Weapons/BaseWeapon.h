@@ -62,7 +62,7 @@ public:
 	FORCEINLINE FIKWeaponProperties GetIKProperties() const { return IKProperties; }
 	FORCEINLINE FName GetWeaponName() const { return WeaponProperties.Name; }
 	
-	FOnAllowOverlapDelegate AllowOverlapDelegate;
+	FOnAllowOverlapDelegate AllowOverlapDelegate{};
 private:
 	
 	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = true))

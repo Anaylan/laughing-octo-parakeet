@@ -39,7 +39,7 @@ class STUDYGAME_API UAbilityTask_SuccessFailEvent : public UAbilityTask
 	UAbilitySystemComponent* GetTargetASC();
 
 	virtual void Activate() override;
-
+	virtual void TickTask(float DeltaTime) override;
 	virtual void SuccessEventCallback(const FGameplayEventData* Payload);
 	virtual void FailedEventCallback(const FGameplayEventData* Payload);
 	virtual void SuccessEventContainerCallback(FGameplayTag MatchingTag, const FGameplayEventData* Payload);

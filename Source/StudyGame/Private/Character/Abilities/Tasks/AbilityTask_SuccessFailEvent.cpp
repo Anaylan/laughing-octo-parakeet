@@ -4,6 +4,7 @@
 #include "Character/Abilities/Tasks/AbilityTask_SuccessFailEvent.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 UAbilityTask_SuccessFailEvent::UAbilityTask_SuccessFailEvent(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer)
@@ -73,6 +74,14 @@ void UAbilityTask_SuccessFailEvent::Activate()
 	}
 
 	Super::Activate();
+}
+
+void UAbilityTask_SuccessFailEvent::TickTask(float DeltaTime)
+{
+	Super::TickTask(DeltaTime);
+
+	UE_LOG(LogTemp, Warning, TEXT("ActorName: %s"), *GetOwnerActor()->GetName());
+	UKismetSystemLibrary::DrawDebugSphere(GetOwnerActor()->GetWorld(), GetOwnerActor()->GetActorLocation(), 15);
 }
 
 void UAbilityTask_SuccessFailEvent::SuccessEventCallback(const FGameplayEventData* Payload)

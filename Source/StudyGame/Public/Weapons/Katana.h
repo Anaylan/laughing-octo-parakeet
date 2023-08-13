@@ -16,6 +16,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FDamageEvent DamageType;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	bool bCanOverlap = false;
 public:
 	// Sets default values for this actor's properties

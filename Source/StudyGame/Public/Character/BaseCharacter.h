@@ -48,7 +48,7 @@ protected:
 	uint8 bAttackGate:1;
 	
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Configuration", meta = (UIMin = .5f, ClampMin = .5f))
-	float ATKPlayRate = 1.f;
+	float AbilityPlayRate = 1.f;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Montage Settings", meta = (UIMin = .0f, ClampMin = .0f))
 	float ResetATKMontageDelayOffset = 0.2f;
 	
@@ -59,20 +59,21 @@ protected:
 	TObjectPtr<ABaseWeapon> CurrentWeapon = nullptr;
 	
 	UPROPERTY(BlueprintReadOnly, Replicated)
-	TObjectPtr<UAnimMontage> AttackMontage = nullptr;
-	
-	int32 MontageATKIndex = 0;
+	TObjectPtr<UAnimMontage> AbilityMontage = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Replicated)
+	int32 MontageAbilityIndex = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "State")
 	int32 WeaponIndex = 0;
 
 	virtual bool CanEquipWeapon(ABaseWeapon* WeaponToEquip);
 
-	UFUNCTION(NetMulticast, Reliable, BlueprintCallable)
-	void PlayAttackMontage(UAnimMontage* MontageToPlay);
+	UFUNCTION(NetMulticast, Reliable)
+	void PlayAbilityMontage(UAnimMontage* MontageToPlay);
 
-	UFUNCTION(Server, Reliable, BlueprintCallable)
-	void Server_PlayAttackMontage(UAnimMontage* MontageToPlay);
+	UFUNCTION(Server, Reliable)
+	void Server_PlayAbilityMontage(UAnimMontage* MontageToPlay);
 	
 	UFUNCTION(Server, Reliable)
 	void Server_SetCurrentWeapon(ABaseWeapon* NewWeapon);
@@ -85,7 +86,7 @@ protected:
 	FTimerHandle MontageTimer;
 
 	UFUNCTION(BlueprintCallable)
-	void SetMontageFromMap_Implemented(TMap<EWeaponType, UAnimMontage*>& MontageMap);
+	void SetMontageFromWeaponType(TMap<EWeaponType, UAnimMontage*>& MontageMap);
 
 
 	bool CanAttack();

@@ -32,32 +32,30 @@ bool ABaseCharacter::CanEquipWeapon(ABaseWeapon* WeaponToEquip)
 	return true;
 }
 
-void ABaseCharacter::PlayAttackMontage_Implementation(UAnimMontage* MontageToPlay)
+void ABaseCharacter::PlayAbilityMontage_Implementation(UAnimMontage* MontageToPlay)
 {
 	if (!MontageToPlay) return;
 
-#if WITH_EDITOR
-	UE_LOG(LogTemp, Warning, TEXT("Montage name: %s"), *MontageToPlay->GetName())
-#endif
-	if (MontageATKIndex >= MontageToPlay->GetNumSections()) MontageATKIndex = 0;
-	FName const SectionName = MontageToPlay->GetSectionName(MontageATKIndex);
+	if (MontageAbilityIndex >= MontageToPlay->GetNumSections()) MontageAbilityIndex = 0;
+	FName const SectionName = MontageToPlay->GetSectionName(MontageAbilityIndex);
 	
-	float const Duration = PlayAnimMontage(MontageToPlay, ATKPlayRate, SectionName);
+	float const Duration = PlayAnimMontage(MontageToPlay, AbilityPlayRate, SectionName);
 	
 	if (Duration > 0.f)
 	{
-		MontageATKIndex++;
+		MontageAbilityIndex++;
 	}
 	
-	GetWorld()->GetTimerManager().SetTimer(MontageTimer, [this]() {MontageATKIndex = 0; },
-		ResetATKMontageDelayOffset + MontageToPlay->GetSectionLength(MontageATKIndex), false);
-	GetWorld()->GetTimerManager().SetTimer(CountTimer, [this]() { AttackCount = 0; }, 
-		Duration + 6.f, false);
+	GetWorld()->GetTimerManager().SetTimer(MontageTimer, [this]() { MontageAbilityIndex = 0; },
+		ResetATKMontageDelayOffset + MontageToPlay->GetSectionLength(MontageAbilityIndex), false);
+	//GetWorld()->GetTimerManager().SetTimer(CountTimer, [this]() { AttackCount = 0; }, 
+	//	Duration + 6.f, false);
 }
 
-void ABaseCharacter::Server_PlayAttackMontage_Implementation(UAnimMontage* MontageToPlay)
+void ABaseCharacter::Server_PlayAbilityMontage_Implementation(UAnimMontage* MontageToPlay)
 {
-	PlayAttackMontage(MontageToPlay);
+	// PlayAnimMontage(MontageToPlay, ATKPlayRate, SectionName);
+	PlayAbilityMontage(MontageToPlay);
 }
 
 bool ABaseCharacter::IsAttack()
@@ -65,21 +63,24 @@ bool ABaseCharacter::IsAttack()
 	return bIsAttacking;
 }
 
-void ABaseCharacter::SetMontageFromMap_Implemented(TMap<EWeaponType, UAnimMontage*>& MontageMap)
+void ABaseCharacter::SetMontageFromWeaponType(TMap<EWeaponType, UAnimMontage*>& MontageMap)
 {
 	if (!IsValid(CurrentWeapon) || MontageMap.IsEmpty()) return;
 	
 	EWeaponType WType = CurrentWeapon->GetType();
-	if (UAnimMontage** Montage = MontageMap.Find(WType))
+	UAnimMontage** Montage = MontageMap.Find(WType);
+	if (AbilityMontage == *Montage) return;
+	
+	if (Montage)
 	{
-		AttackMontage = *Montage;
+		AbilityMontage = *Montage;
 	}
 	else
 	{
 #if WITH_EDITOR
 		UE_LOG(LogTemp, Warning, TEXT("Weapon has `WeaponProperties.Type` with unknown value: %d"), static_cast<int32>(WType))
 #endif
-		AttackMontage = nullptr;
+		AbilityMontage = nullptr;
 	}
 }
 
@@ -309,7 +310,7 @@ void ABaseCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	// DOREPLIFETIME(ThisClass, HealthAttribute);
 	// DOREPLIFETIME(ThisClass, AttackMontage);
 
-	DOREPLIFETIME_CONDITION(ThisClass, AttackMontage, ELifetimeCondition::COND_SkipOwner)
+	DOREPLIFETIME_CONDITION(ThisClass, AbilityMontage, ELifetimeCondition::COND_SkipOwner)
 	DOREPLIFETIME_CONDITION(ThisClass, MovementComponent, ELifetimeCondition::COND_None)
 	DOREPLIFETIME_CONDITION(ThisClass, Weapons, ELifetimeCondition::COND_None)
 	DOREPLIFETIME_CONDITION(ThisClass, CurrentWeapon, ELifetimeCondition::COND_None)
@@ -507,7 +508,7 @@ float ABaseCharacter::GetAnimCurveValue(const FName CurveName)
 void ABaseCharacter::UseAbility(bool bIsPressed, const EAbilityTypeInputID AbilityTypeInputID)
 {
 	if (!IsValid(AbilitySystemComponent)) return;
-
+	
 	if (bIsPressed)
 	{
 		AbilitySystemComponent->AbilityLocalInputPressed(static_cast<int32>(AbilityTypeInputID));
@@ -615,10 +616,13 @@ void ABaseCharacter::PlayAttackAnimation(TMap<EWeaponType, UAnimMontage*> Montag
 	if (IsLocallyControlled() && CanAttack())
 	{
 		UE_LOG(LogTemp, Log, TEXT("Triggered"))
-		SetMontageFromMap_Implemented(MontageMap);
+		if (!MontageMap.FindKey(AbilityMontage))
+		{
+			SetMontageFromWeaponType(MontageMap);
+		}
 		
 		// Called replicated function in server
-		Server_PlayAttackMontage(AttackMontage);
+		Server_PlayAbilityMontage(AbilityMontage);
 	}
 }
 
@@ -753,7 +757,52 @@ void ABaseCharacter::HandleHealthChanged(float Delta, const FGameplayTagContaine
 
 void ABaseCharacter::HandlePunch_Implementation()
 {
-	CurrentWeapon->AllowOverlapDelegate.Broadcast(true);
+	TArray<AActor*> ActorsArray;
+	TArray<FOverlapResult> OverlapResults;
+	GetCurrentWeapon()->GetCollision()->GetOverlappingActors(ActorsArray, ABaseCharacter::StaticClass());
+	UE_LOG(LogTemp, Error, TEXT("%hd"), ActorsArray.Num())
+	int Count{};
+
+	if (ActorsArray.Num() > 0)
+	{
+		for (AActor* Actor : ActorsArray)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Actor name: %s"), *Actor->GetName());
+			if (Actor &&
+				Actor != this &&
+				Actor->ActorHasTag("Enemy") &&
+				UKismetSystemLibrary::DoesImplementInterface(
+					Actor, UAbilitySystemInterface::StaticClass()))
+			{
+				// don't punch if dead
+				if (Cast<IAbilitySystemInterface>(Actor)->GetAbilitySystemComponent()->HasMatchingGameplayTag(
+					FGameplayTag::RequestGameplayTag("Gameplay.Status.IsDead")))
+				{
+					UE_LOG(LogTemp, Display, TEXT("Found IsDead"))
+					continue;
+				}
+
+				const FGameplayTag Tag = FGameplayTag::RequestGameplayTag("Weapon.Hit");
+				FGameplayEventData Payload = FGameplayEventData();
+				Payload.Instigator = GetInstigator();
+				Payload.Target = Actor;
+				Payload.TargetData = UAbilitySystemBlueprintLibrary::AbilityTargetDataFromActor(Actor);
+				UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), Tag, Payload);
+
+				++Count;
+			}
+		}
+	}
+
+	// if our Count returns 0, it means we did not hit an enemy and we should end our ability
+	if (Count == 0)
+	{
+		const FGameplayTag Tag = FGameplayTag::RequestGameplayTag("Weapon.NoHit");
+		FGameplayEventData Payload = FGameplayEventData();
+		Payload.Instigator = GetInstigator();
+		Payload.TargetData = FGameplayAbilityTargetDataHandle();
+		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), Tag, Payload);
+	}
 }
 
 void ABaseCharacter::AddStartupGameplayAbilities()

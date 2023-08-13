@@ -77,11 +77,11 @@ Plugins/*/Intermediate/*
 # Cache files for the editor to use
 DerivedDataCache/*
 
-Content/Characters/*
-Content/ARPG_Samurai/*
+Content/Characters/**/*.uasset
+Content/ARPG_Samurai
 Content/__ExternalActors__
 Content/__ExternalObjects__
 Content/InfinityBladeWeapons/*
 Content/ThirdParty/*
 Content/Weapon/*
-Plugins/*
+Plugins/Developer/*

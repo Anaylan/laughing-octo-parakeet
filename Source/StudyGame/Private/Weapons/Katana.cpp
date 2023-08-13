@@ -18,22 +18,11 @@ AKatana::AKatana()
 
 	WeaponProperties.Range = EWeaponRange::Melee;
 	WeaponProperties.Type = EWeaponType::Katana;
-	
-	// BladeCapsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("StartBlade"));
-	// BladeCapsule->SetupAttachment(MeshComponent);
-	// BladeCapsule->SetCollisionProfileName(TEXT("OverlapAll"));
-
-	// MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	// MeshComponent->SetGenerateOverlapEvents(true);
-	// MeshComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Overlap); // Allow overlap to all collision channels
 }
 
 void AKatana::SetOverlap(bool bNewOverlapValue)
 {
-	if (bCanOverlap != bNewOverlapValue)
-	{
-		bCanOverlap = bNewOverlapValue;
-	}
+	bCanOverlap = bNewOverlapValue;
 }
 
 // Called when the game starts or when spawned
@@ -49,59 +38,47 @@ void AKatana::OnOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* O
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	if (!bCanOverlap) return;
-
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *OtherActor->GetName());
-	if (!OtherActor || OtherActor == GetOwner() ||
-		OtherActor->IsA(ABaseWeapon::StaticClass()) || !OtherComp
-		|| !OtherActor->ActorHasTag("Enemy"))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Send empty payload"))
-		FGameplayEventData Payload = FGameplayEventData();
-		Payload.Instigator = GetOwner();
-		Payload.TargetData = FGameplayAbilityTargetDataHandle();
-		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetOwner(), FGameplayTag::RequestGameplayTag(
-			FName("Weapon.NoHit")), Payload);
-		return;
-	}
-
-	ABaseCharacter* CharacterOwner = StaticCast<ABaseCharacter*>(GetOwner());
-
-	if (!IsValid(CharacterOwner))
-	{
-#if WITH_EDITOR
-		UE_LOG(LogTemp, Warning, TEXT("Send empty payload"))
-#endif
-		FGameplayEventData Payload = FGameplayEventData();
-		Payload.Instigator = CharacterOwner;
-		Payload.TargetData = FGameplayAbilityTargetDataHandle();
-		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(CharacterOwner, FGameplayTag::RequestGameplayTag(
-			FName("Weapon.NoHit")), Payload);
-		return;
-	}
-	
-	// don't punch if dead
-	if (Cast<IAbilitySystemInterface>(OtherActor)->GetAbilitySystemComponent()->HasMatchingGameplayTag(
-	FGameplayTag::RequestGameplayTag(
-		FName("Gameplay.Status.IsDead"))))
-	{
-#if WITH_EDITOR
-		UE_LOG(LogTemp, Log, TEXT("Found IsDead"))
-#endif
-	FGameplayEventData Payload = FGameplayEventData();
-	Payload.Instigator = CharacterOwner;
-	Payload.TargetData = FGameplayAbilityTargetDataHandle();
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(CharacterOwner, FGameplayTag::RequestGameplayTag(
-		FName("Weapon.NoHit")), Payload);
-	return;
-	}
-
-#if WITH_EDITOR
-		UE_LOG(LogTemp, Log, TEXT("Send payload"))
-#endif
-	FGameplayEventData Payload = FGameplayEventData();
-	Payload.Instigator = CharacterOwner;
-	Payload.Target = CharacterOwner;
-	Payload.TargetData = UAbilitySystemBlueprintLibrary::AbilityTargetDataFromActor(OtherActor);
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(CharacterOwner, FGameplayTag::RequestGameplayTag(
-		FName("Weapon.Hit")), Payload);
+// 	UE_LOG(LogTemp, Warning, TEXT("Overlap method called"))
+// 	UKismetSystemLibrary::DrawDebugSphere(GetMesh()->GetWorld(), SweepResult.ImpactPoint, 20, 6, FLinearColor::Blue, 10);
+// 	if (OtherActor == nullptr || !OtherActor->ActorHasTag("Enemy") || OtherActor == GetOwner())
+// 	{
+// #if WITH_EDITOR
+// 		UE_LOG(LogTemp, Warning, TEXT("Send empty payload"))
+// #endif
+// 		FGameplayEventData Payload = FGameplayEventData();
+// 		Payload.Instigator = GetOwner();
+// 		Payload.TargetData = FGameplayAbilityTargetDataHandle();
+// 		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetOwner(), FGameplayTag::RequestGameplayTag(
+// 			FName("Weapon.NoHit")), Payload);
+// 		return;
+// 	}
+//
+// 	// Check if the OtherActor implements the AbilitySystemInterface
+// 	if (OtherActor->GetClass()->ImplementsInterface(UAbilitySystemInterface::StaticClass()))
+// 	{
+// 		if (IAbilitySystemInterface* AbilitySystemInterface = Cast<IAbilitySystemInterface>(OtherActor))
+// 		{
+// 			UAbilitySystemComponent* AbilitySystemComponent = AbilitySystemInterface->GetAbilitySystemComponent();
+// 			if (AbilitySystemComponent && AbilitySystemComponent->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(FName("Gameplay.Status.IsDead"))))
+// 			{
+// 				FGameplayEventData Payload = FGameplayEventData();
+// 				Payload.Instigator = GetOwner();
+// 				Payload.TargetData = FGameplayAbilityTargetDataHandle();
+// 				UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetOwner(), FGameplayTag::RequestGameplayTag(
+// 					FName("Weapon.NoHit")), Payload);
+// 				return;
+// 			}
+// 		}
+// 	}
+// 	
+// #if WITH_EDITOR
+// 	UE_LOG(LogTemp, Log, TEXT("Send payload"))
+// #endif
+// 	
+// 	FGameplayEventData Payload = FGameplayEventData();
+// 	Payload.Instigator = GetOwner();
+// 	Payload.Target = OtherActor;
+// 	Payload.TargetData = UAbilitySystemBlueprintLibrary::AbilityTargetDataFromActor(OtherActor);
+// 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetOwner(), FGameplayTag::RequestGameplayTag(
+// 		FName("Weapon.Hit")), Payload);
 }
