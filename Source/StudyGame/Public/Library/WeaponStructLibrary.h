@@ -13,15 +13,9 @@ struct FWeaponProperties
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float BaseDMG = 0.f;
-	
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	// float AttackRange = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	float DMGMultiplier = 1.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FName Name = FName(TEXT(""));
+	FName Name = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EWeaponType Type = EWeaponType::NONE;
@@ -50,19 +44,13 @@ struct FIKWeaponProperties
 };
 
 USTRUCT(BlueprintType)
-struct FWeaponMontageSettings
+struct FMontageGlobalState
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	TObjectPtr<UAnimMontage> Sword;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> OnGround;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	TObjectPtr<UAnimMontage> Dagger;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	TObjectPtr<UAnimMontage> Spear;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Melee")
-	TObjectPtr<UAnimMontage> Katana;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> InAir;
 };

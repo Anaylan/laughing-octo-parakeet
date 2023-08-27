@@ -18,13 +18,11 @@ class STUDYGAME_API ATP_Character : public ABaseCharacter
 	
 public:
 	// Sets default values for this character's properties
-	ATP_Character(const FObjectInitializer& ObjectInitializer);
+	explicit ATP_Character(const FObjectInitializer& ObjectInitializer);
 
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void EnableRagdoll() override;
 	
 	void InterruptMontage();

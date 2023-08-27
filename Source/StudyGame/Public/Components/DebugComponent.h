@@ -24,8 +24,6 @@ protected:
 	TWeakObjectPtr<ABaseCharacter> CachedCharacter = nullptr;
 	
 public:	
-	// Called every frame
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	void DrawArrow(FVector Start, FVector End, float ArrowSize, FLinearColor LinearColor, float Thickness) const;
 	

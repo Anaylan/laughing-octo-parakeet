@@ -61,8 +61,7 @@ void UIKFootComponent::UpdateFootTrace(FHitResult& HitResult, FName SocketName)
 	const FVector End = FVector(SocketLocation.X, SocketLocation.Y, CharacterOwner->GetActorLocation().Z - 
 		(CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() + FootVariables.fFootHeight + fTraceDistance));
 
-	EDrawDebugTrace::Type DrawDebugTrace = bDebug ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None;
-
+	const EDrawDebugTrace::Type DrawDebugTrace = bDebug && WITH_EDITOR ? EDrawDebugTrace::ForOneFrame : EDrawDebugTrace::None;
 	
 	TArray<AActor*> ActorsToIgnore;
 	ActorsToIgnore.Add(GetOwner());
@@ -96,7 +95,7 @@ void UIKFootComponent::UpdateFootOffset(FHitResult HitResult, FName SocketName, 
 		TargetLocation = FVector(HitResult.ImpactNormal * FootHeight + HitResult.ImpactPoint) - (CurLocation + FVector(0.f, 0.f, FootHeight));
 	}
 
-	float InterpSpeed = CharacterOwner->GetCharacterMovement()->IsMovingOnGround() ? 15.f : 25.f;
+	float InterpSpeed = CharacterOwner->GetCharacterMovement()->IsMovingOnGround() ? 15.f : 30.f;
 
 	CurFootOffset = FMath::VInterpTo(CurFootOffset, TargetLocation, DeltaTime, InterpSpeed);
 }

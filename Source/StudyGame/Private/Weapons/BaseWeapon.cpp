@@ -30,14 +30,6 @@ void ABaseWeapon::BeginPlay()
 {	
 	Super::BeginPlay();
 	bReplicates = true;
-	
-	GetMesh()->AddTickPrerequisiteActor(this);
-}
-
-// Called every frame
-void ABaseWeapon::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
 }
 
 void ABaseWeapon::Equip(ACharacter* NewOwner)
@@ -54,13 +46,8 @@ void ABaseWeapon::UnEquip()
 	SetOwner(nullptr);
 }
 
-bool ABaseWeapon::CanUsed()
-{
-	return !bEquipped;
-}
-
 float ABaseWeapon::GetDamage()
 {
-	return WeaponProperties.BaseDMG * WeaponProperties.DMGMultiplier;
+	return WeaponProperties.BaseDMG;
 }
 

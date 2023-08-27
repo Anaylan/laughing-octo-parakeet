@@ -71,7 +71,10 @@ void UBaseMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 		PhysSlide(deltaTime, Iterations);
 		break;
 	default:
-		UE_LOG(LogTemp, Fatal, TEXT("Invalid Movement Mode"));
+#if WITH_EDITOR
+		UE_LOG(LogTemp, Fatal, TEXT("Invalid Movement Mode"))
+#endif
+		break;
 	}
 }
 
@@ -224,8 +227,6 @@ void UBaseMovementComponent::EnterSlide(EMovementMode PrevMovementMode, ECustomM
 	FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor,
 		true, nullptr);
 
-	UE_LOG(LogTemp, Warning, TEXT("ok"));
-	
 }
 
 bool UBaseMovementComponent::CanSlide() const
@@ -296,6 +297,7 @@ void UBaseMovementComponent::FSavedMove_Base::Clear()
 	bSavedMovementProfileUpdate = false;
 	bSavedRotationModeUpdate = false;
 	SavedMovementProfile = EMovementProfile::Walking;
+	SavedRotationMode = ERotationMode::Looking;
 }
 
 uint8 UBaseMovementComponent::FSavedMove_Base::GetCompressedFlags() const
@@ -323,6 +325,7 @@ void UBaseMovementComponent::FSavedMove_Base::SetMoveFor(ACharacter* C, float In
 		bSavedRotationModeUpdate = CharacterMovement->bSafeRotationModeUpdate;
 		bSavedWantsToSlide = CharacterMovement->bSafeWantsToSlide;
 		SavedMovementProfile = CharacterMovement->SafeMovementProfile;
+		SavedRotationMode = CharacterMovement->SafeRotationMode;
 	}
 }
 

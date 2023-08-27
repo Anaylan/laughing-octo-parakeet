@@ -27,12 +27,6 @@ void ATP_Character::BeginPlay()
 	
 }
 
-void ATP_Character::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	
-}
-
 void ATP_Character::EnableRagdoll()
 {
 	Super::EnableRagdoll();
@@ -47,7 +41,7 @@ void ATP_Character::EnableRagdoll()
 		SetReplicateMovement(false);
 		DetachFromControllerPendingDestroy();
 
-		SetLifeSpan(5.f);
+		// SetLifeSpan(5.f);
 
 	}
 }
@@ -56,22 +50,23 @@ void ATP_Character::EnableRagdoll()
 void ATP_Character::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	
 }
 
 void ATP_Character::SprintAction()
 {
 	Super::SprintAction();
-
-	MontageChanged.Broadcast();
-	if (MovementProfile == EMovementProfile::Sprint)
-	{
-		InterruptMontage();
-	}
+	
+	// if (MovementProfile == EMovementProfile::Sprint)
+	// {
+	// 	InterruptMontage();
+	// }
 }
 
 void ATP_Character::InterruptMontage()
 {
-	if (!IsAttack() || GetMovementProfile() != EMovementProfile::Sprint) return;
+	if (!IsPlayingAnimation() || GetMovementProfile() != EMovementProfile::Sprint) return;
 
 	StopAnimMontage();
 }

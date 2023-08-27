@@ -11,39 +11,26 @@
 // Sets default values for this component's properties
 UDebugComponent::UDebugComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = false;
-
-	// ...
 }
-
 
 // Called when the game starts
 void UDebugComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// ...
+	
 	CachedCharacter = Cast<ABaseCharacter>(GetOwner());
-}
-
-
-// Called every frame
-void UDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// ...
 }
 
 void UDebugComponent::DrawArrow(FVector Start, FVector End, float ArrowSize, FLinearColor LinearColor, float Thickness) const
 {
+#if WITH_EDITOR
 	UKismetSystemLibrary::DrawDebugArrow(GetWorld(), Start, End, ArrowSize, LinearColor, 0.f, Thickness);
+#endif
 }
 
 void UDebugComponent::DrawVelocityDirection(float ArrowSize, FLinearColor LinearColor, float Thickness, float OffsetZ)
 {
+#if WITH_EDITOR
 	if (!CachedCharacter.IsValid()) return;
 
 	const FVector Start = CachedCharacter->GetActorLocation() - FVector(0.f, 0.f,
@@ -55,10 +42,12 @@ void UDebugComponent::DrawVelocityDirection(float ArrowSize, FLinearColor Linear
 	FVector End = Start + FRotationMatrix(CachedCharacter->GetActorRotation()).GetUnitAxis(EAxis::X).GetSafeNormal() * ClampedVelocity;
 	
 	DrawArrow(Start, End, ArrowSize, LinearColor, Thickness);
+#endif
 }
 
 void UDebugComponent::DrawControlRotation(float ArrowSize, FLinearColor LinearColor, float Thickness, float OffsetZ)
 {
+#if WITH_EDITOR
 	if (!CachedCharacter.IsValid()) return;
 
 	const FVector Start = CachedCharacter->GetActorLocation() - FVector(0.f, 0.f,
@@ -67,11 +56,13 @@ void UDebugComponent::DrawControlRotation(float ArrowSize, FLinearColor LinearCo
 	FVector End = Start + FRotationMatrix(CachedCharacter->GetControlRotation()).GetUnitAxis(EAxis::X).GetSafeNormal2D() * 50.f;
 	
 	DrawArrow(Start, End, ArrowSize, LinearColor, Thickness);
+#endif
 }
 
 void UDebugComponent::DrawTargetVelocityDirection(float ArrowSize, FLinearColor LinearColor, float Thickness,
 	float OffsetZ)
 {
+#if WITH_EDITOR
 	if (!CachedCharacter.IsValid()) return;
 
 	const FVector Start = CachedCharacter->GetActorLocation() - FVector(0.f, 0.f,
@@ -83,4 +74,5 @@ void UDebugComponent::DrawTargetVelocityDirection(float ArrowSize, FLinearColor 
 	FVector End = Start + FRotationMatrix(CachedCharacter->GetVelocity().Rotation()).GetUnitAxis(EAxis::X).GetSafeNormal() * ClampedVelocity;
 	
 	DrawArrow(Start, End, ArrowSize, LinearColor, Thickness);
+#endif
 }

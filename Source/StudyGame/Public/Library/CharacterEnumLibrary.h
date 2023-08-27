@@ -18,7 +18,8 @@ UENUM(BlueprintType)
 enum class ELocomotionMode : uint8
 {
 	Grounded,
-	Falling
+	Falling,
+	Swimming
 };
 
 UENUM(BlueprintType)

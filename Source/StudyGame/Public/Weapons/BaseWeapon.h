@@ -11,8 +11,6 @@ struct FWeaponProperties;
 class ABaseCharacter;
 class UCapsuleComponent;
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnAllowOverlapDelegate, bool)
-
 UCLASS(Abstract)
 class STUDYGAME_API ABaseWeapon : public AActor
 {
@@ -28,8 +26,6 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
 	bool bEquipped = false;
-	
-	FTimerHandle AttackTimer;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Components")
 	TObjectPtr<USkeletalMeshComponent> MeshComponent = nullptr;
@@ -38,20 +34,18 @@ protected:
 	TObjectPtr<UCapsuleComponent> CollisionComponent = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
-	TObjectPtr<USceneComponent> Root  = nullptr;
+	TObjectPtr<USceneComponent> Root = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
 	FWeaponProperties WeaponProperties;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration")
+	FName SocketInCharacter = FName(TEXT("Weapon_R"));
 	
 public:
 
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-
 	void Equip(ACharacter* NewOwner);
 	void UnEquip();
-
-	virtual bool CanUsed();
 	
 	virtual float GetDamage();
 
@@ -61,8 +55,7 @@ public:
 	FORCEINLINE UCapsuleComponent* GetCollision() const { return CollisionComponent; }
 	FORCEINLINE FIKWeaponProperties GetIKProperties() const { return IKProperties; }
 	FORCEINLINE FName GetWeaponName() const { return WeaponProperties.Name; }
-	
-	FOnAllowOverlapDelegate AllowOverlapDelegate{};
+	FORCEINLINE FName GetTargetSocketName() const { return SocketInCharacter; }
 private:
 	
 	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = true))

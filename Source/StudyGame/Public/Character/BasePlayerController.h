@@ -72,6 +72,12 @@ protected:
 
 	UFUNCTION(BlueprintCallable)
 	void IA_PrevWeapon(const FInputActionValue& Value) const;
+	
+	UFUNCTION(BlueprintCallable)
+	void IA_ChargeAttack(const FInputActionValue& Value) const;
+	
+	UFUNCTION(BlueprintCallable)
+	void IA_JumpAttack(const FInputActionValue& Value) const;
 	// Attributes
 	
 

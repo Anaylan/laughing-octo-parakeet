@@ -15,11 +15,7 @@
 
 ABasePlayerController::ABasePlayerController()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = true;
-
 	PlayerCameraManagerClass = ABasePlayerCameraManager::StaticClass();
-
 }
 
 void ABasePlayerController::SetupInputComponent()
@@ -43,8 +39,7 @@ void ABasePlayerController::SetupInputComponent()
 					UClass::TryFindTypeSlow<UEnum>("/Script/StudyGame.EAbilityTypeInputID"))),
 				static_cast<int32>(EAbilityTypeInputID::Confirm),
 				static_cast<int32>(EAbilityTypeInputID::Canceled));
-
-			UE_LOG(LogTemp, Warning, TEXT("BindNames: %s"), *Binds.EnumPathName.ToString())
+			
 			PossessedCharacter->GetAbilitySystemComponent()->BindAbilityActivationToInputComponent(EnhancedInputComponent, Binds);
 		}
 	}
@@ -65,19 +60,21 @@ void ABasePlayerController::OnPossess(APawn* InPawn)
 
 	PossessedCharacter = Cast<ABaseCharacter>(InPawn);
 
-	if (PossessedCharacter)
+	if (PossessedCharacter && PossessedCharacter->GetAbilitySystemComponent())
 	{
 		PossessedCharacter->GetAbilitySystemComponent()->InitAbilityActorInfo(PossessedCharacter, InPawn);
 	}
+	
 	SetupInput();
 	SetupCamera();
 }
 
 void ABasePlayerController::BindInputs(const UInputMappingContext* MappingContext)
 {
+	if (!MappingContext) return;
+	
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		if (!MappingContext) return;
 		TArray<FEnhancedActionKeyMapping> KeyMappings = MappingContext->GetMappings();
 
 		if (KeyMappings.Num() > 0)
@@ -93,18 +90,18 @@ void ABasePlayerController::BindInputs(const UInputMappingContext* MappingContex
 
 void ABasePlayerController::SetupInput() const
 {
-	if (PossessedCharacter)
-	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+	if (!PossessedCharacter) return;
+	
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
 		ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-		{
-			Subsystem->ClearAllMappings();
-			FModifyContextOptions ContextOptions;
-			ContextOptions.bForceImmediately = true;
-			
-			Subsystem->AddMappingContext(DefaultInputMapping, 1, ContextOptions);
-		}
+	{
+		Subsystem->ClearAllMappings();
+		FModifyContextOptions ContextOptions;
+		ContextOptions.bForceImmediately = true;
+		
+		Subsystem->AddMappingContext(DefaultInputMapping, 1, ContextOptions);
 	}
+	
 }
 
 void ABasePlayerController::SetupCamera() const
@@ -131,7 +128,7 @@ void ABasePlayerController::IA_Jump(const FInputActionValue& Value) const
 {
 	if (PossessedCharacter)
 	{
-		PossessedCharacter->JumpAction(Value.Get<bool>());
+		PossessedCharacter->UseAbility(Value.Get<bool>(), EAbilityTypeInputID::IA_Jump);
 	}
 }
 
@@ -139,7 +136,7 @@ void ABasePlayerController::IA_Sprint(const FInputActionValue& Value) const
 {
 	if (PossessedCharacter)
 	{
-		PossessedCharacter->SprintAction();
+		PossessedCharacter->UseAbility(Value.Get<bool>(), EAbilityTypeInputID::IA_Sprint);
 	}
 }
 
@@ -180,5 +177,22 @@ void ABasePlayerController::IA_PrevWeapon(const FInputActionValue& Value) const
 	if (PossessedCharacter)
 	{
 		PossessedCharacter->PrevWeapon();
+	}
+}
+
+
+void ABasePlayerController::IA_ChargeAttack(const FInputActionValue& Value) const
+{
+	if (PossessedCharacter)
+	{
+		PossessedCharacter->UseAbility(Value.Get<bool>(), EAbilityTypeInputID::IA_ChargeAttack);
+	}
+}
+
+void ABasePlayerController::IA_JumpAttack(const FInputActionValue& Value) const
+{
+	if (PossessedCharacter)
+	{
+		PossessedCharacter->UseAbility(Value.Get<bool>(), EAbilityTypeInputID::IA_JumpAttack);
 	}
 }

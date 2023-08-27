@@ -10,13 +10,21 @@
 #include "Weapons/BaseWeapon.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+UCharacterAnimInstance::UCharacterAnimInstance()
+{
+	bJumped = false;
+	bMoving = false;
+	bCanPlayDynamicTransition = true;
+}
+
 void UCharacterAnimInstance::NativeBeginPlay()
 {
 	Super::NativeBeginPlay();
 	
 	CharacterOwner = StaticCast<ABaseCharacter*>(TryGetPawnOwner());
 	if (!CharacterOwner.IsValid()) { return; }
-
+	bCanPlayDynamicTransition = true;
+	
 	MovementComponent = CharacterOwner->FindComponentByClass<UBaseMovementComponent>();
 	
 	CharacterOwner->JumpedDelegate.AddDynamic(this, &UCharacterAnimInstance::OnJumped);
@@ -81,10 +89,18 @@ void UCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	if (MovementMode.IsGrounded())
 	{
 		UpdateGrounded(DeltaSeconds);
-		
-		if (CanTurnInPlace())
+
+		// TODO: Implement rotation in place
+		if (!bMoving)
 		{
-			TurnInPlaceCheck(DeltaSeconds);
+			if (CanTurnInPlace())
+			{
+				TurnInPlaceCheck(DeltaSeconds);
+			}
+			else if (CanDynamicTransition())
+			{
+				DynamicTransitionCheck();
+			}
 		}
 
 		SetFootLocking(DeltaSeconds, NAME_EnableFootIK_L, NAME_FootIK_L, NAME_FootLock_L,
@@ -94,7 +110,7 @@ void UCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		SetFootLocking(DeltaSeconds, NAME_EnableFootIK_R, NAME_FootIK_R, NAME_FootLock_R,
 			FootLockProperties.RightFootLocation, FootLockProperties.RightFootRotation, 
 			FootLockProperties.RightFootAlpha);
-
+		
 		MovementDirection = CalculateDirection();
 		
 		CalculateDirectionBlend(DirectionBlend, DeltaSeconds, 10.f);
@@ -123,11 +139,11 @@ void UCharacterAnimInstance::TurnInPlaceCheck(float DeltaTime)
 	
 	if (ElapsedDelayTime > ClampedAimingX)
 	{		
-		TurnInPlace(DeltaTime);
+		TurnInPlace();
 	}
 }
 
-void UCharacterAnimInstance::TurnInPlace(float DeltaTime)
+void UCharacterAnimInstance::TurnInPlace()
 {
 	FRotator DeltaRotator = CharacterInformation.AimingRotation - CharacterInformation.ActorRotation;
 	DeltaRotator.Normalize();
@@ -135,7 +151,7 @@ void UCharacterAnimInstance::TurnInPlace(float DeltaTime)
 	
 	FTurnInPlaceAsset TargetAsset;
 	
-	if (FMath::Abs(TurnAngle) < 130.f)
+	if (FMath::Abs(TurnAngle) < 120.f)
 	{
 		TargetAsset = TurnAngle < 0.f ? TurnIPL90 : TurnIPR90;
 	}
@@ -148,19 +164,39 @@ void UCharacterAnimInstance::TurnInPlace(float DeltaTime)
 
 	PlaySlotAnimationAsDynamicMontage(TargetAsset.Animation, TargetAsset.SlotName, .2f, .2f,
 		TargetAsset.PlayRate, 1, 0.f, 0.f);
+	
+	RotationScale = TargetAsset.ScaleTurnAngle ? (TurnAngle / TargetAsset.AnimatedAngle) * TargetAsset.PlayRate :
+		TargetAsset.PlayRate;
 
-	if (TargetAsset.ScaleTurnAngle)
+}
+
+bool UCharacterAnimInstance::CanDynamicTransition()
+{
+	return GetCurveValue(NAME_EnableTransition) >= 1.f;
+}
+
+void UCharacterAnimInstance::DynamicTransitionCheck()
+{
+	FTransform SocketTransformA = GetOwningComponent()->GetSocketTransform(NAME_FootIK_L, RTS_Component);
+	FTransform SocketTransformB = GetOwningComponent()->GetSocketTransform(NAME_VBFoot_L, RTS_Component);
+	float Delta = static_cast<float>((SocketTransformB.GetLocation() - SocketTransformA.GetLocation()).Size());
+	if (Delta > 8.f)
 	{
-		RotationScale = (TurnAngle / TargetAsset.AnimatedAngle) * TargetAsset.PlayRate;
+		PlayDynamicTransition(DynamicTurnIPL, DynamicTriggerDelayL);
+		return;
 	}
-	else
+	
+	SocketTransformA = GetOwningComponent()->GetSocketTransform(NAME_FootIK_R, RTS_Component);
+	SocketTransformB = GetOwningComponent()->GetSocketTransform(NAME_VBFoot_R, RTS_Component);
+	Delta = static_cast<float>((SocketTransformB.GetLocation() - SocketTransformA.GetLocation()).Size());
+	if (Delta > 8.f)
 	{
-		RotationScale = TargetAsset.PlayRate;
+		PlayDynamicTransition(DynamicTurnIPR, DynamicTriggerDelayR);
 	}
 }
 
 void UCharacterAnimInstance::SetFootLocking(float DeltaTime, FName EnableCurveName, FName IKFootBone, FName LockCurve,
-	FVector& CurFootLockLoc, FRotator& CurFootLockRot, float& CurFootLockAlpha)
+                                            FVector& CurFootLockLoc, FRotator& CurFootLockRot, float& CurFootLockAlpha)
 {
 	if (GetCurveValue(EnableCurveName) <= .0f) return;
 	
@@ -275,17 +311,25 @@ void UCharacterAnimInstance::PlayTransition(const FDynamicMontageParams& Params)
 		Params.BlendOutTime, Params.PlayRate, 1, .0f, Params.StartTime);
 }
 
+void UCharacterAnimInstance::PlayDynamicTransition(const FDynamicMontageParams& Params, const float TriggerDelay)
+{
+	if (bCanPlayDynamicTransition)
+	{
+		bCanPlayDynamicTransition = false;
+		
+		PlayTransition(Params);
+		
+		GetWorld()->GetTimerManager().SetTimer(DynamicTransitionTimerHandle, [this]() { bCanPlayDynamicTransition = true; },
+			TriggerDelay, false);
+	}
+}
+
 void UCharacterAnimInstance::OnJumped()
 {
 	bJumped = true;
 
-	GetWorld()->GetTimerManager().SetTimer(JumpedTimerHandle, this, &UCharacterAnimInstance::JumpReset,
+	GetWorld()->GetTimerManager().SetTimer(JumpedTimerHandle, [this]() { bJumped = false; },
 		.1f, false);
-}
-
-void UCharacterAnimInstance::JumpReset()
-{
-	bJumped = false;
 }
 
 #pragma region CalculateFunctions

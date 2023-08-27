@@ -7,21 +7,56 @@
 #include "Components/BaseAbilitySystemComponent.h"
 #include "Character/BaseMovementComponent.h"
 #include "Components/IKFootComponent.h"
-#include "MotionWarpingComponent.h"
 #include "Animation/CharacterAnimInstance.h"
 #include "Camera/CameraComponent.h"
-#include "Character/Abilities/BaseGameplayAbility.h"
+#include "Abilities/BaseGameplayAbility.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Kismet/GameplayStatics.h"
 #include "Library/AbilityEnumLibrary.h"
+#include "Library/StructEnumLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapons/BaseWeapon.h"
 
+// Sets default values
+ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UBaseMovementComponent>(CharacterMovementComponentName))
+{
+	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	PrimaryActorTick.bCanEverTick = true;
 
-const static FName NAME_WeaponRSocket = FName(TEXT("Weapon_R"));
+	bReplicates = true;
+	
+	bAbilitiesInitialized = false;
+	
+	bUseControllerRotationRoll = bUseControllerRotationPitch = bUseControllerRotationYaw = false;
+
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->RotationRate = FRotator(0.f, 300.f, 0.f);
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(RootComponent);
+	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->TargetArmLength = 400.f;
+	
+	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FollowCamera->SetupAttachment(CameraBoom);
+	FollowCamera->bUsePawnControlRotation = false;
+
+	AbilitySystemComponent = CreateDefaultSubobject<UBaseAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+	
+	HealthAttribute = CreateDefaultSubobject<UBaseAttributeSet>(TEXT("Stats"));
+	
+	// Custom components
+	IKFootComponent = CreateDefaultSubobject<UIKFootComponent>(TEXT("IK Foot Component"));
+	
+	GetMesh()->SetRelativeLocation_Direct({0.f, 0.f, -92.f});
+	GetMesh()->SetRelativeRotation_Direct({0.f, -90.f, 0.f});
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
+	GetMesh()->bEnableUpdateRateOptimizations = false;
+}
 
 bool ABaseCharacter::CanEquipWeapon(ABaseWeapon* WeaponToEquip)
 {
@@ -29,64 +64,100 @@ bool ABaseCharacter::CanEquipWeapon(ABaseWeapon* WeaponToEquip)
 	{
 		return false;
 	}
+
+	// We can't equip weapon in battle
+	if (!IsAlive() || IsInCombat())
+	{
+		return false;
+	}
+	
 	return true;
 }
 
 void ABaseCharacter::PlayAbilityMontage_Implementation(UAnimMontage* MontageToPlay)
 {
 	if (!MontageToPlay) return;
-
+	
 	if (MontageAbilityIndex >= MontageToPlay->GetNumSections()) MontageAbilityIndex = 0;
+	
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (!AnimInstance->IsValidLowLevelFast()) return;
+	
 	FName const SectionName = MontageToPlay->GetSectionName(MontageAbilityIndex);
 	
-	float const Duration = PlayAnimMontage(MontageToPlay, AbilityPlayRate, SectionName);
-	
+	float const Duration = AnimInstance->Montage_Play(MontageToPlay, AbilityPlayRate);
+
 	if (Duration > 0.f)
 	{
+		AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
+		
 		MontageAbilityIndex++;
+
+		GetWorld()->GetTimerManager().SetTimer(MontageTimer, [this]() { MontageAbilityIndex = 0; },
+			ResetATKMontageDelay + MontageToPlay->GetSectionLength(MontageAbilityIndex), false);
 	}
 	
-	GetWorld()->GetTimerManager().SetTimer(MontageTimer, [this]() { MontageAbilityIndex = 0; },
-		ResetATKMontageDelayOffset + MontageToPlay->GetSectionLength(MontageAbilityIndex), false);
-	//GetWorld()->GetTimerManager().SetTimer(CountTimer, [this]() { AttackCount = 0; }, 
-	//	Duration + 6.f, false);
+	MontageEndedDelegate.BindUObject(this, &ThisClass::OnMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(MontageEndedDelegate, MontageToPlay);
+
+	BlendingOutDelegate.BindUObject(this, &ThisClass::OnMontageBlendingOut);
+	AnimInstance->Montage_SetBlendingOutDelegate(BlendingOutDelegate, MontageToPlay);
 }
 
 void ABaseCharacter::Server_PlayAbilityMontage_Implementation(UAnimMontage* MontageToPlay)
 {
-	// PlayAnimMontage(MontageToPlay, ATKPlayRate, SectionName);
 	PlayAbilityMontage(MontageToPlay);
 }
 
-bool ABaseCharacter::IsAttack()
+bool ABaseCharacter::IsInCombat() const
 {
-	return bIsAttacking;
+	// TODO: Add "in battle state"
+	
+	return false;
 }
 
-void ABaseCharacter::SetMontageFromWeaponType(TMap<EWeaponType, UAnimMontage*>& MontageMap)
+UBaseMovementComponent* ABaseCharacter::GetCustomMovementComponent() const
 {
-	if (!IsValid(CurrentWeapon) || MontageMap.IsEmpty()) return;
-	
-	EWeaponType WType = CurrentWeapon->GetType();
-	UAnimMontage** Montage = MontageMap.Find(WType);
-	if (AbilityMontage == *Montage) return;
-	
-	if (Montage)
-	{
-		AbilityMontage = *Montage;
-	}
-	else
-	{
-#if WITH_EDITOR
-		UE_LOG(LogTemp, Warning, TEXT("Weapon has `WeaponProperties.Type` with unknown value: %d"), static_cast<int32>(WType))
-#endif
-		AbilityMontage = nullptr;
-	}
+	return StaticCast<UBaseMovementComponent*>(GetCharacterMovement());
 }
 
-bool ABaseCharacter::CanAttack()
+UAbilitySystemComponent* ABaseCharacter::GetAbilitySystemComponent() const
 {
-	return IsValid(CurrentWeapon) && IsAlive() && !IsAttack();
+	return Cast<UAbilitySystemComponent>(AbilitySystemComponent.Get());
+}
+
+bool ABaseCharacter::IsPlayingAnimation() const
+{
+	return bIsPlayingAnimation;
+}
+
+bool ABaseCharacter::CanAttack() const
+{
+	return IsValid(CurrentWeapon) && IsAlive() && !IsPlayingAnimation();
+}
+
+void ABaseCharacter::OnMontageEnded_Implementation(class UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!IsDataAbilitySend)
+	{
+		FGameplayEventData Payload = FGameplayEventData();
+		Payload.Instigator = GetInstigator();
+		Payload.TargetData = FGameplayAbilityTargetDataHandle();
+		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), WeaponNoHitTag, Payload);
+	}
+	if (IsDataAbilitySend) IsDataAbilitySend = false;
+}
+
+void ABaseCharacter::OnMontageBlendingOut_Implementation(class UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!IsDataAbilitySend)
+	{
+		FGameplayEventData Payload = FGameplayEventData();
+		Payload.Instigator = GetInstigator();
+		Payload.TargetData = FGameplayAbilityTargetDataHandle();
+		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), WeaponNoHitTag, Payload);
+	}
+	if (IsDataAbilitySend) IsDataAbilitySend = false;
 }
 
 void ABaseCharacter::Server_SetCurrentWeapon_Implementation(ABaseWeapon* NewWeapon)
@@ -120,57 +191,18 @@ void ABaseCharacter::SpawnWeapons()
 	}
 }
 
-// Sets default values
-ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer.SetDefaultSubobjectClass<UBaseMovementComponent>(CharacterMovementComponentName))
-{
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
-
-	bReplicates = true;
-	
-	bAbilitiesInitialized = false;
-	
-	bUseControllerRotationRoll = bUseControllerRotationPitch = bUseControllerRotationYaw = false;
-
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.f, 300.f, 0.f);
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->bUsePawnControlRotation = true;
-	CameraBoom->TargetArmLength = 400.f;
-	
-	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(CameraBoom);
-	FollowCamera->bUsePawnControlRotation = false;
-
-	MotionWarping = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarping"));
-	MotionWarping->bSearchForWindowsInAnimsWithinMontages = true;
-
-	AbilitySystemComponent = CreateDefaultSubobject<UBaseAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-	AbilitySystemComponent->SetIsReplicated(true);
-	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
-	
-	HealthAttribute = CreateDefaultSubobject<UHealthAttributeSet>(TEXT("Health"))->GetClass();
-	
-	// Custom components
-	IKFootComponent = CreateDefaultSubobject<UIKFootComponent>(TEXT("IK Foot Component"));
-	
-	GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -92.f));
-	GetMesh()->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
-
-	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered;
-	GetMesh()->bEnableUpdateRateOptimizations = false;
-}
-
 // Called when the game starts or when spawned
 void ABaseCharacter::BeginPlay()
 {
+	if ((!WeaponHitTag.IsValid() || !WeaponNoHitTag.IsValid() || !IsDeadTag.IsValid()) && WITH_EDITOR)
+	{
+		GEngine->AddOnScreenDebugMessage(NULL, 10.f, FColor::Red, TEXT("Tag/tags for ability system component is empty, please set value for tag/tags"));
+	}
 	Super::BeginPlay();
 
 	SetReplicateMovement(true);
 	
-	SetEssentialVariables();
+	InitMovementStates();
 	SetMovementModel();
 
 	CharacterDeathNative.AddUObject(this, &ThisClass::OnDeathNative);
@@ -182,10 +214,6 @@ void ABaseCharacter::BeginPlay()
 	}
 	
 	MovementComponent->SetMovementSettings(GetTargetMovementSettings());
-
-	// NormalAttackDelegate.AddDynamic(this, &ABaseCharacter::PlayAttack);
-	// WeaponChangedDelegate.AddDynamic(this, &ABaseCharacter::ChangeWeaponMontage);
-	// MontageChanged.AddDynamic(this, &ABaseCharacter::ChangeAttackMontage);
 	
 	SpawnWeapons();
 
@@ -200,7 +228,7 @@ void ABaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	WeaponIndex = NULL;
 	WeaponChangedDelegate.RemoveAll(this);
-
+	
 	if (CurrentWeapon)
 	{
 		CurrentWeapon->Destroy();
@@ -211,18 +239,20 @@ void ABaseCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8
 {
 	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
 
-	if (!IsValid(MovementComponent)) return;
+	if (!MovementComponent.IsValid()) return;
 	
-	if (MovementComponent->MovementMode == MOVE_Flying || MovementComponent->MovementMode == MOVE_Falling)
+	if (MovementComponent->IsFalling())
 	{
 		SetLocomotionMode(ELocomotionMode::Falling);
 	}
-	else if (MovementComponent->MovementMode == MOVE_Walking || MovementComponent->MovementMode == MOVE_Custom ||
-		MovementComponent->MovementMode == MOVE_NavWalking)
+	else if (MovementComponent->IsMovingOnGround())
 	{
 		SetLocomotionMode(ELocomotionMode::Grounded);
 	}
-	
+	else if (MovementComponent->IsSwimming())
+	{
+		SetLocomotionMode(ELocomotionMode::Swimming);
+	}
 }
 
 bool ABaseCharacter::CanUpdateMovementRotation()
@@ -288,12 +318,7 @@ void ABaseCharacter::PostInitializeComponents()
 
 	GetMesh()->AddTickPrerequisiteActor(this);
 	
-	// SetReplicates(true);
-	// SetReplicateMovement(true);
-	
 	MovementComponent = StaticCast<UBaseMovementComponent*>(GetCharacterMovement());
-	
-	// CombatComponent = StaticCast<UCombatComponent*>(GetComponentByClass<UCombatComponent>());
 }
 
 void ABaseCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -307,36 +332,47 @@ void ABaseCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ThisClass, GlobalStance)
 	DOREPLIFETIME(ThisClass, OverlayState)
 	DOREPLIFETIME(ThisClass, WeaponIndex)
-	// DOREPLIFETIME(ThisClass, HealthAttribute);
-	// DOREPLIFETIME(ThisClass, AttackMontage);
+	DOREPLIFETIME(ThisClass, MontageAbilityIndex)
+	DOREPLIFETIME(ThisClass, IsDataAbilitySend)
+	DOREPLIFETIME(ThisClass, bIsPlayingAnimation)
 
 	DOREPLIFETIME_CONDITION(ThisClass, AbilityMontage, ELifetimeCondition::COND_SkipOwner)
 	DOREPLIFETIME_CONDITION(ThisClass, MovementComponent, ELifetimeCondition::COND_None)
 	DOREPLIFETIME_CONDITION(ThisClass, Weapons, ELifetimeCondition::COND_None)
 	DOREPLIFETIME_CONDITION(ThisClass, CurrentWeapon, ELifetimeCondition::COND_None)
-	// DOREPLIFETIME_CONDITION(ThisClass, MotionWarping, ELifetimeCondition::COND_None);
 }
 
 float ABaseCharacter::GetHealth()
 {
-	if (!IsValid(HealthAttribute)) return 1.f;
-
-	return HealthAttribute.GetDefaultObject()->GetHealth();
-
+	return HealthAttribute ? HealthAttribute->GetHealth() : 1.f;
 }
 
 float ABaseCharacter::GetMaxHealth()
 {
-	if (!IsValid(HealthAttribute)) return 1.f;
-
-	return HealthAttribute.GetDefaultObject()->GetMaxHealth();
+	return HealthAttribute ? HealthAttribute->GetMaxHealth() : 1.f;
 }
 
 float ABaseCharacter::GetDamage()
 {
-	if (!IsValid(HealthAttribute)) return 0.f;
+	return HealthAttribute ? HealthAttribute->GetDamage() : 0.f;
+}
 
-	return HealthAttribute.GetDefaultObject()->GetDamage();
+void ABaseCharacter::Server_SetIsPlayingAnimation_Implementation(bool bAttack)
+{
+	SetIsPlayingAnimation(bAttack);
+}
+
+void ABaseCharacter::SetIsPlayingAnimation(bool bPlayingAnimation)
+{
+	if (bIsPlayingAnimation != bPlayingAnimation)
+	{
+		bIsPlayingAnimation = bPlayingAnimation;
+
+		if (HasAuthority())
+		{
+			Server_SetIsPlayingAnimation(bPlayingAnimation);
+		}
+	}
 }
 
 void ABaseCharacter::OnDeathNative()
@@ -358,20 +394,6 @@ void ABaseCharacter::SetMovementModel()
 	MovementData = *Row;
 }
 
-void ABaseCharacter::WarpToTarget(FName WarpTargetName)
-{
-	// Warping settings
-	TArray<AActor*> TargetPoints;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ABaseCharacter::StaticClass(), TargetPoints);
-	
-	if (MotionWarping != nullptr && TargetPoints[0] != nullptr)
-	{
-		MotionWarping->AddOrUpdateWarpTargetFromLocationAndRotation(WarpTargetName,
-			TargetPoints[0]->GetActorLocation(),
-			FRotationMatrix::MakeFromX(TargetPoints[0]->GetActorLocation() - GetActorLocation()).Rotator());
-	}
-}
-
 FMovementProfileSettings ABaseCharacter::GetTargetMovementSettings() const
 {
 	if (RotationMode == ERotationMode::Looking)
@@ -382,7 +404,24 @@ FMovementProfileSettings ABaseCharacter::GetTargetMovementSettings() const
 	return MovementData.LookingDirection;
 }
 
-void ABaseCharacter::SetEssentialVariables()
+UAnimMontage* ABaseCharacter::GetMontageFromWeaponMap(TMap<EWeaponType, FMontageGlobalState> MontageMap)
+{
+	if (!IsValid(CurrentWeapon) || MontageMap.IsEmpty()) return nullptr;
+	
+	EWeaponType WType = CurrentWeapon->GetType();
+	if (FMontageGlobalState* Montage = MontageMap.Find(WType))
+	{
+		if (MovementComponent->IsFalling() && Montage->InAir) return Montage->InAir;
+		if (MovementComponent->IsMovingOnGround() && Montage->OnGround) return Montage->OnGround;
+	}
+#if WITH_EDITOR
+	UE_LOG(LogTemp, Warning, TEXT("Weapon has `WeaponProperties.Type` with unknown value: %d, in: %s"), static_cast<int32>(WType),
+		*UStructEnumLibrary::EnumToString<EMovementMode>(MovementComponent->MovementMode))
+#endif
+	return nullptr;
+}
+
+void ABaseCharacter::InitMovementStates()
 {
 	SetMovementProfile(MovementProfile, true);
 	SetRotationMode(RotationMode, true);
@@ -399,7 +438,7 @@ void ABaseCharacter::UpdateEssentialVariables(float DeltaTime)
 	Speed = static_cast<float>(CurVelocity.Size2D());
 
 	const FVector NewAcceleration = (CurVelocity - PreviousVelocity) / DeltaTime;
-	Acceleration = NewAcceleration.IsNearlyZero() || IsLocallyControlled() ? NewAcceleration : Acceleration / 2;
+	Acceleration = NewAcceleration.IsNearlyZero() || IsLocallyControlled() ? NewAcceleration : Acceleration;
 	
 	const float CurAccel = static_cast<float>(Acceleration.Size2D());
 	const float MaxAccel = MovementComponent->GetMaxAcceleration();
@@ -436,9 +475,10 @@ void ABaseCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
+	if (!AbilitySystemComponent) return;
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 
-	if (AbilitySystemComponent && InputComponent)
+	if (InputComponent)
 	{
 		const FGameplayAbilityInputBinds Binds(
 			"Confirm",
@@ -456,15 +496,11 @@ void ABaseCharacter::OnRep_CurrentWeapon(ABaseWeapon* OldPrimaryWeapon)
 {
 	if (CurrentWeapon && CanEquipWeapon(CurrentWeapon))
 	{
-		// CurrentWeapon->SetActorTransform(CachedCharacter->GetMesh()->GetSocketTransform(NAME_WeaponRSocket),
-		// 	false, nullptr, ETeleportType::TeleportPhysics);
 		CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale,
-			NAME_WeaponRSocket);
+			CurrentWeapon->GetTargetSocketName());
 		
 		CurrentWeapon->Equip(this);
 		SetGlobalStance(EPawnGlobalStance::Armed);
-		
-		// MontageChanged.Broadcast();
 	}
 	else
 	{
@@ -479,8 +515,7 @@ void ABaseCharacter::OnRep_CurrentWeapon(ABaseWeapon* OldPrimaryWeapon)
 		OldPrimaryWeapon->UnEquip();
 		OldPrimaryWeapon = nullptr;
 	}
-
-	// WeaponChangedDelegate.Broadcast()
+	
 	WeaponChangedDelegate.Broadcast(CurrentWeapon, OldPrimaryWeapon);
 }
 
@@ -507,15 +542,15 @@ float ABaseCharacter::GetAnimCurveValue(const FName CurveName)
 
 void ABaseCharacter::UseAbility(bool bIsPressed, const EAbilityTypeInputID AbilityTypeInputID)
 {
-	if (!IsValid(AbilitySystemComponent)) return;
+	if (!AbilitySystemComponent) return;
 	
 	if (bIsPressed)
 	{
-		AbilitySystemComponent->AbilityLocalInputPressed(static_cast<int32>(AbilityTypeInputID));
+		AbilitySystemComponent->AbilityLocalInputPressed(static_cast<uint8>(AbilityTypeInputID));
 	}
 	else
 	{
-		AbilitySystemComponent->AbilityLocalInputReleased(static_cast<int32>(AbilityTypeInputID));
+		AbilitySystemComponent->AbilityLocalInputReleased(static_cast<uint8>(AbilityTypeInputID));
 	}
 }
 
@@ -585,7 +620,7 @@ void ABaseCharacter::SprintAction()
 	{
 		// TODO: Implement dash as initial transition to sprint
 		
-		SetRotationMode(ERotationMode::Looking, true);
+		SetRotationMode(ERotationMode::Looking);
 		SetMovementProfile(EMovementProfile::Sprint);
 	}
 	else
@@ -611,15 +646,11 @@ void ABaseCharacter::AimAction()
 	}
 }
 
-void ABaseCharacter::PlayAttackAnimation(TMap<EWeaponType, UAnimMontage*> MontageMap)
+void ABaseCharacter::PlayAttackAnimation(TMap<EWeaponType, FMontageGlobalState> MontageMap)
 {
-	if (IsLocallyControlled() && CanAttack())
+	if (IsLocallyControlled())
 	{
-		UE_LOG(LogTemp, Log, TEXT("Triggered"))
-		if (!MontageMap.FindKey(AbilityMontage))
-		{
-			SetMontageFromWeaponType(MontageMap);
-		}
+		AbilityMontage = GetMontageFromWeaponMap(MontageMap);
 		
 		// Called replicated function in server
 		Server_PlayAbilityMontage(AbilityMontage);
@@ -746,11 +777,15 @@ void ABaseCharacter::HandleHealthChanged(float Delta, const FGameplayTagContaine
 	// We only call the BP callback if this is not the initial ability setup
 	if (bAbilitiesInitialized)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("Delta: %f"), Delta)
+		UE_LOG(LogTemp, Warning, TEXT("Health: %f"), GetHealth())
 		OnHealthChanged(Delta, EventTags);
 		if (GetHealth() <= 0.f)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Adding DeadTag"))
-			AbilitySystemComponent->AddLooseGameplayTag(DeadTag);
+#if WITH_EDITOR
+			UE_LOG(LogTemp, Warning, TEXT("Adding IsDeadTag"))
+#endif
+			AbilitySystemComponent->AddLooseGameplayTag(IsDeadTag);
 		}
 	}
 }
@@ -758,56 +793,41 @@ void ABaseCharacter::HandleHealthChanged(float Delta, const FGameplayTagContaine
 void ABaseCharacter::HandlePunch_Implementation()
 {
 	TArray<AActor*> ActorsArray;
-	TArray<FOverlapResult> OverlapResults;
+	
 	GetCurrentWeapon()->GetCollision()->GetOverlappingActors(ActorsArray, ABaseCharacter::StaticClass());
-	UE_LOG(LogTemp, Error, TEXT("%hd"), ActorsArray.Num())
-	int Count{};
-
+	
 	if (ActorsArray.Num() > 0)
 	{
 		for (AActor* Actor : ActorsArray)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Actor name: %s"), *Actor->GetName());
 			if (Actor &&
 				Actor != this &&
-				Actor->ActorHasTag("Enemy") &&
-				UKismetSystemLibrary::DoesImplementInterface(
-					Actor, UAbilitySystemInterface::StaticClass()))
+				(Actor->ActorHasTag("Enemy") || Actor->ActorHasTag("Destroyable")))
 			{
+
 				// don't punch if dead
 				if (Cast<IAbilitySystemInterface>(Actor)->GetAbilitySystemComponent()->HasMatchingGameplayTag(
-					FGameplayTag::RequestGameplayTag("Gameplay.Status.IsDead")))
+					IsDeadTag))
 				{
-					UE_LOG(LogTemp, Display, TEXT("Found IsDead"))
 					continue;
 				}
-
-				const FGameplayTag Tag = FGameplayTag::RequestGameplayTag("Weapon.Hit");
+				
 				FGameplayEventData Payload = FGameplayEventData();
 				Payload.Instigator = GetInstigator();
 				Payload.Target = Actor;
 				Payload.TargetData = UAbilitySystemBlueprintLibrary::AbilityTargetDataFromActor(Actor);
-				UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), Tag, Payload);
+				
+				UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), WeaponHitTag, Payload);
 
-				++Count;
+				if (!IsDataAbilitySend) IsDataAbilitySend = true;
 			}
 		}
-	}
-
-	// if our Count returns 0, it means we did not hit an enemy and we should end our ability
-	if (Count == 0)
-	{
-		const FGameplayTag Tag = FGameplayTag::RequestGameplayTag("Weapon.NoHit");
-		FGameplayEventData Payload = FGameplayEventData();
-		Payload.Instigator = GetInstigator();
-		Payload.TargetData = FGameplayAbilityTargetDataHandle();
-		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), Tag, Payload);
 	}
 }
 
 void ABaseCharacter::AddStartupGameplayAbilities()
 {
-	check(AbilitySystemComponent)
+	check(AbilitySystemComponent.Get())
 
 	if (HasAuthority() && !bAbilitiesInitialized)
 	{
@@ -817,8 +837,6 @@ void ABaseCharacter::AddStartupGameplayAbilities()
 				Ability, 1,
 				static_cast<int32>(Ability.GetDefaultObject()->AbilityTypeID),
 				this));
-
-			UE_LOG(LogTemp, Warning, TEXT("Ability name: %s"), *Ability.GetDefaultObject()->GetName())
 		}
 
 		for (const TSubclassOf<UGameplayEffect> Effect: PassiveGameplayEffects)
@@ -832,7 +850,7 @@ void ABaseCharacter::AddStartupGameplayAbilities()
 			if (NewHandle.IsValid())
 			{
 				AbilitySystemComponent->ApplyGameplayEffectSpecToTarget(*NewHandle.Data.Get(),
-					AbilitySystemComponent);
+					AbilitySystemComponent.Get());
 			}
 		}
 

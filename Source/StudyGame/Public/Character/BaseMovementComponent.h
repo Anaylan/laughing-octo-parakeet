@@ -14,16 +14,17 @@ class STUDYGAME_API UBaseMovementComponent : public UCharacterMovementComponent
 {
 	GENERATED_BODY()
 	
-	class FSavedMove_Base : public FSavedMove_Character
+	class FSavedMove_Base final : public FSavedMove_Character
 	{
 		typedef FSavedMove_Character Super;
 
 		// Flags
-		bool bSavedMovementProfileUpdate = false;
-		bool bSavedRotationModeUpdate = false;
+		uint8 bSavedMovementProfileUpdate:1;
+		uint8 bSavedRotationModeUpdate:1;
 		
 		uint8 bSavedWantsToSlide:1;
-		EMovementProfile SavedMovementProfile = EMovementProfile::Running;
+		TEnumAsByte<enum EMovementProfile> SavedMovementProfile{ EMovementProfile::Running };
+		TEnumAsByte<enum ERotationMode> SavedRotationMode{ ERotationMode::Looking };
 		
 		virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* InCharacter, float MaxDelta) const override;
 		virtual void Clear() override;
@@ -47,17 +48,18 @@ class STUDYGAME_API UBaseMovementComponent : public UCharacterMovementComponent
 	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = true))
 	FMovementProfileSettings MovementSettings;
 
-	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = true))
-	EMovementProfile SafeMovementProfile;
-	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = true))
-	ERotationMode SafeRotationMode;
+	UPROPERTY(Transient)
+	TObjectPtr<ABaseCharacter> BaseCharacterOwner = nullptr;
+	
+protected:
+	UPROPERTY(BlueprintReadOnly)
+	TEnumAsByte<enum EMovementProfile> SafeMovementProfile;
+	UPROPERTY(BlueprintReadOnly)
+	TEnumAsByte<enum ERotationMode> SafeRotationMode;
 	
 	bool bSafeMovementSettingsUpdate = false;
 	bool bSafeRotationModeUpdate = false;
 	bool bSafeWantsToSlide = false;
-	
-	UPROPERTY(Transient)
-	TObjectPtr<ABaseCharacter> BaseCharacterOwner = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Configuration", meta = (AllowPrivateAccess = true))
 	FSlideSettings SlideSettings;

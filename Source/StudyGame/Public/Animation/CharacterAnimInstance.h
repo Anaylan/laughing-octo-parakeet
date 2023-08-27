@@ -25,17 +25,26 @@ class STUDYGAME_API UCharacterAnimInstance : public UAnimInstance
 	GENERATED_BODY()
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Information")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
 	float ElapsedDelayTime = 0.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Movement Information")
 	float RotationScale = 0.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Information")
-	bool bJumped = false;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Information")
-	bool bMoving = false;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Information")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Settings")
+	float DynamicTriggerDelayL = .1f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Settings")
+	float DynamicTriggerDelayR = .1f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
+	uint8 bJumped:1;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
+	uint8 bMoving:1;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
+	uint8 bCanPlayDynamicTransition:1;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
 	float Direction = 0.f;
-	
+
+	/*************
+	 * References
+	 ************/
 	UPROPERTY(Transient, BlueprintReadOnly)
 	TWeakObjectPtr<UIKFootComponent> IKFootComponent = nullptr;
 	UPROPERTY(Transient, BlueprintReadOnly)
@@ -50,13 +59,21 @@ protected:
 	TObjectPtr<ABaseWeapon> CurrentWeapon = nullptr;
 	
 	FTimerHandle JumpedTimerHandle;
-	
+	FTimerHandle DynamicTransitionTimerHandle;
+
+	/*******************
+	 * Character state
+	 ******************/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FCharacterInformation CharacterInformation;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FMovementProfile MovementProfile = EMovementProfile::Running;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ScriptName="LocomotionMode"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FMovementMode MovementMode = ELocomotionMode::Grounded;
+
+	/*******************
+	 * ???????????????
+	 ******************/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FIKFootProperties IKFootProperties;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -81,15 +98,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FTransform RelativeCameraTransform = FTransform();
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Params")
 	FTurnInPlaceAsset TurnIPL90;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Params")
 	FTurnInPlaceAsset TurnIPR90;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Params")
 	FTurnInPlaceAsset TurnIPL180;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Params")
 	FTurnInPlaceAsset TurnIPR180;
-
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Params")
+	FDynamicMontageParams DynamicTurnIPL;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement transition | Params")
+	FDynamicMontageParams DynamicTurnIPR;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	EMovementDirection MovementDirection = EMovementDirection::Forward;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
@@ -97,10 +118,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	EOverlayState OverlayState = EOverlayState::Default;
 public:
+	UCharacterAnimInstance();
+	
 	virtual void NativeBeginPlay() override;
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	
+	/***********************************
+	 * Skeletal name bones and notifies
+	 **********************************/
 	inline static FName NAME_RotationAmount = FName(TEXT("RotationAmount"));
 	inline static FName NAME_Grounded = FName(TEXT("Grounded"));
 	inline static FName NAME_EnableTransition = FName(TEXT("Enable_Transition"));
@@ -111,6 +137,8 @@ public:
 	inline static FName NAME_FootIK_R = FName(TEXT("ik_foot_r"));
 	inline static FName NAME_FootLock_L = FName(TEXT("FootLock_L"));
 	inline static FName NAME_FootLock_R = FName(TEXT("FootLock_R"));
+	inline static FName NAME_VBFoot_L = FName(TEXT("VB foot_target_l"));
+	inline static FName NAME_VBFoot_R = FName(TEXT("VB foot_target_r"));
 	inline static FName NAME_EnableFootIK_L = FName(TEXT("Enable_FootIK_L"));
 	inline static FName NAME_EnableFootIK_R = FName(TEXT("Enable_FootIK_R"));
 	inline static FName NAME_LayerHandL = FName(TEXT("Layering_Hand_L"));
@@ -128,8 +156,12 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	bool CanTurnInPlace();
 	void TurnInPlaceCheck(float DeltaTime);
-	void TurnInPlace(float DeltaTime);
+	void TurnInPlace();
 
+	UFUNCTION(BlueprintCallable)
+	bool CanDynamicTransition();
+	void DynamicTransitionCheck();
+	
 	void SetFootLocking(float DeltaTime, FName EnableCurveName, FName IKFootBone, FName LockCurve, FVector& CurFootLockLoc,
 		FRotator& CurFootLockRot, float& CurFootLockAlpha);
 	void SetFootLockOffset(float DeltaTime, FVector& CurFootLockLoc, FRotator& CurFootLockRot);
@@ -156,11 +188,11 @@ protected:
 
 	UFUNCTION(BlueprintCallable)
 	void PlayTransition(const FDynamicMontageParams& Params);
+	UFUNCTION(BlueprintCallable)
+	void PlayDynamicTransition(const FDynamicMontageParams& Params, float TriggerDelay);
 	
 	UFUNCTION(BlueprintCallable)
 	void OnJumped();
-	
-	void JumpReset();
 	
 	float GetAnimCurveValue(FName CurveName, float Bias, float Min, float Max) const;
 	float CalculateStrideVelocity() const;
