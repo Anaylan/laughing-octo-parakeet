@@ -18,7 +18,6 @@ class STUDYGAME_API UBaseGameplayAbility : public UGameplayAbility
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	EAbilityTypeInputID AbilityTypeID = EAbilityTypeInputID::None;
-
 };
 
 

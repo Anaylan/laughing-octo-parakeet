@@ -78,6 +78,9 @@ protected:
 	
 	UFUNCTION(BlueprintCallable)
 	void IA_JumpAttack(const FInputActionValue& Value) const;
+
+	UFUNCTION(BlueprintCallable)
+	void IA_Dash(const FInputActionValue& Value) const;
 	// Attributes
 	
 

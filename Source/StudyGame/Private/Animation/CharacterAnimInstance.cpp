@@ -7,8 +7,10 @@
 #include "Camera/CameraComponent.h"
 #include "Components/IKFootComponent.h"
 #include "Character/BaseCharacter.h"
+#include "Components/IKHandComponent.h"
 #include "Weapons/BaseWeapon.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Library/MathBlueprintFunctionLibrary.h"
 
 UCharacterAnimInstance::UCharacterAnimInstance()
 {
@@ -21,21 +23,24 @@ void UCharacterAnimInstance::NativeBeginPlay()
 {
 	Super::NativeBeginPlay();
 	
-	CharacterOwner = StaticCast<ABaseCharacter*>(TryGetPawnOwner());
-	if (!CharacterOwner.IsValid()) { return; }
+	CachedCharacter = Cast<ABaseCharacter>(TryGetPawnOwner());
+	if (!CachedCharacter.IsValid()) return;
 	bCanPlayDynamicTransition = true;
 	
-	MovementComponent = CharacterOwner->FindComponentByClass<UBaseMovementComponent>();
+	MovementComponent = CachedCharacter->FindComponentByClass<UBaseMovementComponent>();
 	
-	CharacterOwner->JumpedDelegate.AddDynamic(this, &UCharacterAnimInstance::OnJumped);
+	CachedCharacter->JumpedDelegate.AddDynamic(this, &ThisClass::OnJumped);
+	CachedCharacter->LandedDelegate.AddDynamic(this, &ThisClass::OnLanded);
 	
 	InitIK();
 }
 
 void UCharacterAnimInstance::NativeInitializeAnimation()
 {
-	CharacterOwner = StaticCast<ABaseCharacter*>(TryGetPawnOwner());
-	if (!CharacterOwner.IsValid()) { return; } 
+	Super::NativeInitializeAnimation();
+	
+	CachedCharacter = Cast<ABaseCharacter>(TryGetPawnOwner());
+	if (!CachedCharacter.IsValid()) return; 
 	
 	InitIK();
 }
@@ -44,7 +49,7 @@ void UCharacterAnimInstance::UpdateWalkRunBlend(float DeltaSeconds)
 {
 	const float TargetStrideVelocity = CalculateStrideVelocity();
 	const float TargetWalkRun = CalculateWalkRun();
-	const float BlendInterpSpeed = 6.f;
+	constexpr float BlendInterpSpeed = 6.f;
 	
 	WalkRunBlend.WalkRun = FMath::FInterpTo(WalkRunBlend.WalkRun, TargetWalkRun, DeltaSeconds, 
 								BlendInterpSpeed);
@@ -74,7 +79,7 @@ void UCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	
-	if (!CharacterOwner.IsValid()) { return; } 
+	if (!CachedCharacter.IsValid()) return;
 	
 	UpdateIK();
 	UpdateEssentialValue();
@@ -83,8 +88,6 @@ void UCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const FVector TargetLeanVector = CalculateRelativeAcceleration();
 	LeanBlend.FB = FMath::FInterpTo(LeanBlend.FB, TargetLeanVector.X, DeltaSeconds, 6.f);
 	LeanBlend.LR = FMath::FInterpTo(LeanBlend.LR, TargetLeanVector.Y, DeltaSeconds, 6.f);
-	
-	CalculateWeaponSway(DeltaSeconds);
 	
 	if (MovementMode.IsGrounded())
 	{
@@ -111,7 +114,7 @@ void UCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 			FootLockProperties.RightFootLocation, FootLockProperties.RightFootRotation, 
 			FootLockProperties.RightFootAlpha);
 		
-		MovementDirection = CalculateDirection();
+		MovementDirection = CalculateDirectionBlend();
 		
 		CalculateDirectionBlend(DirectionBlend, DeltaSeconds, 10.f);
 	}
@@ -199,8 +202,8 @@ void UCharacterAnimInstance::SetFootLocking(float DeltaTime, FName EnableCurveNa
                                             FVector& CurFootLockLoc, FRotator& CurFootLockRot, float& CurFootLockAlpha)
 {
 	if (GetCurveValue(EnableCurveName) <= .0f) return;
-	
-	float CurveValue = GetCurveValue(LockCurve);
+
+	const float CurveValue = GetCurveValue(LockCurve);
 	
 	if (CurveValue >= .99f || CurveValue < CurFootLockAlpha)
 	{
@@ -228,7 +231,7 @@ void UCharacterAnimInstance::SetFootLockOffset(float DeltaTime, FVector& CurFoot
 	FRotator RotationDiff = CharacterInformation.ActorRotation - MovementComponent->GetLastUpdateRotation();
 	RotationDiff.Normalize();
 
-	FVector LocationDiff = GetOwningComponent()->GetComponentRotation().UnrotateVector(
+	const FVector LocationDiff = GetOwningComponent()->GetComponentRotation().UnrotateVector(
 		CharacterInformation.Velocity * DeltaTime);
 	
 	CurFootLockLoc = (CurFootLockLoc - LocationDiff).RotateAngleAxis(RotationDiff.Yaw, FVector::DownVector);
@@ -248,23 +251,21 @@ void UCharacterAnimInstance::CurrentWeaponChanged(ABaseWeapon* NewWeapon, const 
 
 void UCharacterAnimInstance::UpdateEssentialValue()
 {
-	CharacterInformation.Acceleration = CharacterOwner->GetAcceleration();
-	CharacterInformation.ActorRotation = CharacterOwner->GetActorRotation();
-	CharacterInformation.AimingRotation = CharacterOwner->GetAimingRotation();
-	CharacterInformation.Velocity = CharacterOwner->GetVelocity();
-	CharacterInformation.Speed = CharacterOwner->GetSpeed();
-	CharacterInformation.AimYawRate = CharacterOwner->GetAimYaw();
+	CharacterInformation.Acceleration = CachedCharacter->GetAcceleration();
+	CharacterInformation.ActorRotation = CachedCharacter->GetActorRotation();
+	CharacterInformation.AimingRotation = CachedCharacter->GetAimingRotation();
+	CharacterInformation.Velocity = CachedCharacter->GetVelocity();
+	CharacterInformation.Speed = CachedCharacter->GetSpeed();
+	CharacterInformation.AimYawRate = CachedCharacter->GetAimYaw();
 	
-	bMoving = CharacterOwner->IsMoving();
+	bMoving = CachedCharacter->IsMoving();
 
-	// RelativeCameraTransform = CalculateRelativeCameraTransform();
-
-	MovementMode = CharacterOwner->GetLocomotionMode();
+	MovementMode = CachedCharacter->GetLocomotionMode();
 
 	AimingAngle = CalculateAimingAngle();
 
-	RotationMode = CharacterOwner->GetRotationMode();
-	OverlayState = CharacterOwner->GetOverlayState();
+	RotationMode = CachedCharacter->GetRotationMode();
+	OverlayState = CachedCharacter->GetOverlayState();
 }
 
 float UCharacterAnimInstance::GetAnimCurveValue(FName CurveName, float Bias, float Min, float Max) const
@@ -274,12 +275,12 @@ float UCharacterAnimInstance::GetAnimCurveValue(FName CurveName, float Bias, flo
 
 void UCharacterAnimInstance::UpdateGrounded(float DeltaSeconds)
 {
-	MovementProfile = CharacterOwner->GetMovementProfile();
+	MovementProfile = CachedCharacter->GetMovementProfile();
 
 	UpdateWalkRunBlend(DeltaSeconds);
 	AnimPlayRate.StandingPlayRate = CalculateStandingPlayRate();
 	
-	Direction = UKismetAnimationLibrary::CalculateDirection(CharacterInformation.Velocity,
+	CurrentDirection = UKismetAnimationLibrary::CalculateDirection(CharacterInformation.Velocity,
 		CharacterInformation.ActorRotation);
 }
 
@@ -289,20 +290,29 @@ void UCharacterAnimInstance::InitIK()
 	if (!IsValid(Owner)) return;
 	
 	UActorComponent* ActorComponent = Owner->GetComponentByClass(UIKFootComponent::StaticClass());
-	if (!IsValid(ActorComponent)) return;
+	if (IsValid(ActorComponent))
+	{
+		IKFootComponent = StaticCast<UIKFootComponent*>(ActorComponent);
+	}
 	
-	IKFootComponent = StaticCast<UIKFootComponent*>(ActorComponent);
+	ActorComponent = Owner->GetComponentByClass(UIKHandComponent::StaticClass());
+	if (IsValid(ActorComponent))
+	{
+		IKHandComponent = StaticCast<UIKHandComponent*>(ActorComponent);
+	}
 }
 
 void UCharacterAnimInstance::UpdateIK()
 {
-	if (!IKFootComponent.IsValid()) return;
-
-	IKFootProperties = IKFootComponent->GetIKProperties();
-}
-
-void UCharacterAnimInstance::UpdateFootLock(FName FootSocket)
-{
+	if (IKFootComponent.IsValid())
+	{
+		IKFootProperties = IKFootComponent->GetIKProperties();
+	}
+	
+	if (IKHandComponent.IsValid())
+	{
+		IKHandProperties = IKHandComponent->GetProperties();
+	}
 }
 
 void UCharacterAnimInstance::PlayTransition(const FDynamicMontageParams& Params)
@@ -318,8 +328,9 @@ void UCharacterAnimInstance::PlayDynamicTransition(const FDynamicMontageParams& 
 		bCanPlayDynamicTransition = false;
 		
 		PlayTransition(Params);
-		
-		GetWorld()->GetTimerManager().SetTimer(DynamicTransitionTimerHandle, [this]() { bCanPlayDynamicTransition = true; },
+
+		FTimerHandle TimerHandle;
+		GetWorld()->GetTimerManager().SetTimer(TimerHandle, [this]() { bCanPlayDynamicTransition = true; },
 			TriggerDelay, false);
 	}
 }
@@ -327,16 +338,14 @@ void UCharacterAnimInstance::PlayDynamicTransition(const FDynamicMontageParams& 
 void UCharacterAnimInstance::OnJumped()
 {
 	bJumped = true;
+	JumpCount++;
 
-	GetWorld()->GetTimerManager().SetTimer(JumpedTimerHandle, [this]() { bJumped = false; },
+	FTimerHandle TimerHandle;
+	GetWorld()->GetTimerManager().SetTimer(TimerHandle, [this]() { bJumped = false; },
 		.1f, false);
 }
 
 #pragma region CalculateFunctions
-void UCharacterAnimInstance::CalculateWeaponSway(const float DeltaTime)
-{
-}
-
 float UCharacterAnimInstance::CalculateStrideVelocity() const
 {
 	if (WalkCurveFloat && RunCurveFloat)
@@ -376,31 +385,15 @@ FVector2D UCharacterAnimInstance::CalculateAimingAngle() const
 	return {AngleRotation.Yaw, AngleRotation.Pitch};
 }
 
-EMovementDirection UCharacterAnimInstance::CalculateDirection() const
+EMovementDirection UCharacterAnimInstance::CalculateDirectionBlend()
 {
 	if (MovementProfile.IsSprint() || RotationMode == ERotationMode::Looking)
 	{
 		return EMovementDirection::Forward;
 	}
-
-	if (Direction < 70.f && Direction > -70.f)
-	{
-		return EMovementDirection::Forward;
-	}
-	else if (Direction >= 70.f && Direction < 130.f)
-	{
-		return EMovementDirection::Right;
-	}
-	else if (Direction >= 130.f || Direction <= -130.f)
-	{
-		return EMovementDirection::Backward;
-	}
-	else if (Direction > -130.f && Direction <= -70.f)
-	{
-		return EMovementDirection::Left;
-	}
-	
-	return EMovementDirection::Forward;
+	// FRotator3f::NormalizeAxis(UE_REAL_TO_FLOAT(CharacterInformation.AimYawRate - CharacterInformation.ActorRotation.Yaw));
+	return UMathBlueprintFunctionLibrary::CalculateMovementDirection(70.f, 130.f, -70.f,
+		-130.f, CurrentDirection);
 }
 
 void UCharacterAnimInstance::CalculateDirectionBlend(FMovementDirectionBlend& CurBlend, float DeltaTime, float InterpSpeed)
@@ -423,26 +416,15 @@ void UCharacterAnimInstance::CalculateDirectionBlend(FMovementDirectionBlend& Cu
 	CurBlend.R = FMath::FInterpTo(CurBlend.R, TargetBlend.R, DeltaTime, InterpSpeed);
 }
 
-FTransform UCharacterAnimInstance::CalculateRelativeCameraTransform()
-{
-	CameraTransform = FTransform(CharacterOwner->GetBaseAimRotation(),
-	CharacterOwner->GetFollowCamera()->GetComponentLocation());
-	
-	const FTransform& RootOffset = CharacterOwner->GetMesh()->GetSocketTransform(NAME_RootBone,
-	RTS_Component).Inverse() * CharacterOwner->GetMesh()->GetSocketTransform(NAME_HandIK_Root);
-
-	return CameraTransform.GetRelativeTransform(RootOffset);
-}
-
 FVector UCharacterAnimInstance::CalculateRelativeAcceleration() const
 {
 	if (FVector::DotProduct(CharacterInformation.Velocity, CharacterInformation.Acceleration) > 0.f)
 	{
-		const float MaxAccel = CharacterOwner->GetCharacterMovement()->GetMaxAcceleration();
+		const float MaxAccel = CachedCharacter->GetCharacterMovement()->GetMaxAcceleration();
 		return CharacterInformation.ActorRotation.UnrotateVector(CharacterInformation.Acceleration.GetClampedToMaxSize(MaxAccel) / MaxAccel);
 	}
 
-	const float MaxBrakingDec = CharacterOwner->GetCharacterMovement()->GetMaxBrakingDeceleration();
+	const float MaxBrakingDec = CachedCharacter->GetCharacterMovement()->GetMaxBrakingDeceleration();
 	return CharacterInformation.ActorRotation.UnrotateVector(CharacterInformation.Acceleration.GetClampedToMaxSize(MaxBrakingDec) / MaxBrakingDec);
 }
 #pragma endregion CalculateFunctions

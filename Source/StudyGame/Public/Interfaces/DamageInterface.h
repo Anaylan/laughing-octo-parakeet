@@ -14,8 +14,8 @@ class UDamageInterface : public UInterface
 	GENERATED_BODY()
 
 public:
-
+	
 	UFUNCTION(BlueprintPure)
-	static void ApplyDamage(FActiveGameplayEffectHandle Handle, FGameplayEffectSpec& Spec,
+	static float CalculateDamage(FActiveGameplayEffectHandle Handle, FGameplayEffectSpec& Spec,
 		FGameplayEffectCustomExecutionParameters& ExecutionParams);
 };

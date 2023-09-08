@@ -23,8 +23,8 @@ class STUDYGAME_API UBaseMovementComponent : public UCharacterMovementComponent
 		uint8 bSavedRotationModeUpdate:1;
 		
 		uint8 bSavedWantsToSlide:1;
-		TEnumAsByte<enum EMovementProfile> SavedMovementProfile{ EMovementProfile::Running };
-		TEnumAsByte<enum ERotationMode> SavedRotationMode{ ERotationMode::Looking };
+		EMovementProfile SavedMovementProfile{ EMovementProfile::Running };
+		ERotationMode SavedRotationMode{ ERotationMode::Looking };
 		
 		virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* InCharacter, float MaxDelta) const override;
 		virtual void Clear() override;
@@ -53,9 +53,9 @@ class STUDYGAME_API UBaseMovementComponent : public UCharacterMovementComponent
 	
 protected:
 	UPROPERTY(BlueprintReadOnly)
-	TEnumAsByte<enum EMovementProfile> SafeMovementProfile;
+	EMovementProfile SafeMovementProfile;
 	UPROPERTY(BlueprintReadOnly)
-	TEnumAsByte<enum ERotationMode> SafeRotationMode;
+	ERotationMode SafeRotationMode;
 	
 	bool bSafeMovementSettingsUpdate = false;
 	bool bSafeRotationModeUpdate = false;

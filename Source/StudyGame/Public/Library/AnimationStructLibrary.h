@@ -11,7 +11,7 @@ struct FDynamicMontageParams
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Transition")
-	TObjectPtr<UAnimSequenceBase> Animation = nullptr;
+	TObjectPtr<UAnimSequenceBase> Animation;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Transition")
 	float BlendInTime = 0.0f;
@@ -32,7 +32,7 @@ struct FTurnInPlaceAsset
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turn In Place")
-	TObjectPtr<UAnimSequenceBase> Animation = nullptr;
+	TObjectPtr<UAnimSequenceBase> Animation;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turn In Place")
 	float AnimatedAngle = 0.0f;
@@ -144,4 +144,22 @@ struct FLayerBlend
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float Spine_Add = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FMontageDirection
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSoftObjectPtr<UAnimMontage> Forward;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSoftObjectPtr<UAnimMontage> Right;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSoftObjectPtr<UAnimMontage> Backward;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSoftObjectPtr<UAnimMontage> Left;
 };

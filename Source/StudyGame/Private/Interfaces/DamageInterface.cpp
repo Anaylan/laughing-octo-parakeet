@@ -4,22 +4,21 @@
 #include "GameplayEffectExecutionCalculation.h"
 #include "GameplayEffect.h"
 
-void UDamageInterface::ApplyDamage(FActiveGameplayEffectHandle Handle, FGameplayEffectSpec& Spec,
+float UDamageInterface::CalculateDamage(FActiveGameplayEffectHandle Handle, FGameplayEffectSpec& Spec,
 		FGameplayEffectCustomExecutionParameters& ExecutionParams)
 {
 	UAbilitySystemComponent* TargetASC = ExecutionParams.GetTargetAbilitySystemComponent();
 	if (!TargetASC)
 	{
-		return;
+		return 0.f;
 	}
 
 	FGameplayEffectSpec Specs = ExecutionParams.GetOwningSpec();
 
 	// Specs.TargetEffectSpecs.Targ
 	
-	AActor* SourceActor = static_cast<AActor*>(Spec.GetEffectContext().GetSourceObject());
+	ABaseCharacter* SourceActor = static_cast<ABaseCharacter*>(Spec.GetEffectContext().GetEffectCauser());
 	// AActor* TargetActor = static_cast<AActor*>(Spec);
-	if (!SourceActor) return;
-
-	
+	if (!SourceActor) return 0.f;
+	return SourceActor->GetDamage();
 }

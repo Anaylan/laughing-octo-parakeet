@@ -10,6 +10,7 @@
 #include "AttributeSet.h"
 #include "Attributes/BaseAttributeSet.h"
 #include "Library/AbilityEnumLibrary.h"
+#include "Library/AnimationStructLibrary.h"
 #include "Library/WeaponEnumLibrary.h"
 #include "BaseCharacter.generated.h"
 
@@ -19,7 +20,7 @@ class UBaseGameplayAbility;
 class UCameraComponent;
 class USpringArmComponent;
 class UIKFootComponent;
-
+struct FMontageGlobalState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnJumpedDelegate);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWeaponChangedDelegate, ABaseWeapon*, Weapon, const ABaseWeapon*, OldWeapon);
@@ -32,9 +33,6 @@ UCLASS(Abstract)
 class STUDYGAME_API ABaseCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
-
-	FOnMontageBlendingOutStarted BlendingOutDelegate;
-	FOnMontageEnded MontageEndedDelegate;
 	
 protected:
 
@@ -44,34 +42,37 @@ protected:
 	float AbilityPlayRate = 1.f;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Montage Settings", meta = (UIMin = .0f, ClampMin = .0f))
 	float ResetATKMontageDelay = 0.2f;
-
+	
 	UPROPERTY(EditDefaultsOnly, Category = "Configurations")
 	TArray<TSubclassOf<ABaseWeapon>> DefaultWeapons;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Replicated, Category = "State")
 	TArray<TObjectPtr<ABaseWeapon>> Weapons;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentWeapon, Category = "State")
-	TObjectPtr<ABaseWeapon> CurrentWeapon = nullptr;
+	TObjectPtr<ABaseWeapon> CurrentWeapon;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category = "State")
 	int32 WeaponIndex = 0;
 	
 	UPROPERTY(BlueprintReadOnly, Replicated)
-	TObjectPtr<UAnimMontage> AbilityMontage = nullptr;
+	TSoftObjectPtr<UAnimMontage> AbilityMontage;
 	UPROPERTY(BlueprintReadOnly, Replicated)
 	uint8 bIsPlayingAnimation:1;
 	UPROPERTY(BlueprintReadWrite, Replicated)
 	int32 MontageAbilityIndex = 0;
-
+	
 	virtual bool CanEquipWeapon(ABaseWeapon* WeaponToEquip);
 
 	UFUNCTION(NetMulticast, Reliable, BlueprintCallable)
 	void PlayAbilityMontage(UAnimMontage* MontageToPlay);
 
+	virtual void Landed(const FHitResult& Hit) override;
+	virtual void NotifyJumpApex() override;
+	
 	UFUNCTION(Server, Reliable)
 	void Server_PlayAbilityMontage(UAnimMontage* MontageToPlay);
 	
 	UFUNCTION(Server, Reliable)
 	void Server_SetCurrentWeapon(ABaseWeapon* NewWeapon);
-
+	
 	FTimerHandle AttackTimer;
 	FTimerHandle CountTimer;
 	FTimerHandle MontageTimer;
@@ -91,17 +92,17 @@ protected:
 	* References
 	**************/
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Input | Camera")
-	TObjectPtr<UCameraComponent> FollowCamera = nullptr;
+	TObjectPtr<UCameraComponent> FollowCamera;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Input | Camera")
-	TObjectPtr<USpringArmComponent> CameraBoom = nullptr;
+	TObjectPtr<USpringArmComponent> CameraBoom;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Components")
-	TObjectPtr<UIKFootComponent> IKFootComponent = nullptr;
+	TObjectPtr<UIKFootComponent> IKFootComponent;
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Movement Settings | Table", meta = (RowType = "/Script/StudyGame.MovementSettings"))
 	FDataTableRowHandle MovementTable;
 	UPROPERTY(Replicated)
-	TWeakObjectPtr<UBaseMovementComponent> MovementComponent = nullptr;
+	TWeakObjectPtr<UBaseMovementComponent> MovementComponent;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UBaseAbilitySystemComponent> AbilitySystemComponent = nullptr;
+	TObjectPtr<UBaseAbilitySystemComponent> AbilitySystemComponent;
 	
 	/****************
 	* Ability system
@@ -109,9 +110,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Abilities")
 	TArray<TSubclassOf<UGameplayEffect>> PassiveGameplayEffects;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Abilities")
+	TMap<EAbilityTypeInputID, TSubclassOf<UBaseGameplayAbility>> StandardAbilities;
 	TArray<TSubclassOf<UBaseGameplayAbility>> GameplayAbilities;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Abilities")
-	TMap<ESlotAbilityID, TSubclassOf<UBaseGameplayAbility>> SelectedGameplayAbilities;
 	UPROPERTY()
 	uint8 bAbilitiesInitialized:1;
 
@@ -140,17 +140,17 @@ protected:
 	/***************
 	* Configuration
 	**************/
-	UPROPERTY(BlueprintReadWrite, Replicated, EditAnywhere, Category = "Movement Settings | State")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Replicated, Category = "Movement Settings | State")
 	EMovementProfile MovementProfile = EMovementProfile::Running;
-	UPROPERTY(BlueprintReadWrite, Replicated, EditAnywhere, Category = "Movement Settings | State")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Replicated, Category = "Movement Settings | State")
 	ERotationMode RotationMode = ERotationMode::Looking;
-	UPROPERTY(BlueprintReadWrite, Replicated, EditAnywhere, Category = "Movement Settings | State")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Replicated, Category = "Movement Settings | State")
 	EMovementAction MovementAction = EMovementAction::None;
-	UPROPERTY(BlueprintReadWrite, Replicated, EditAnywhere, Category = "Movement Settings | State")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Replicated, Category = "Movement Settings | State")
 	EPawnGlobalStance GlobalStance = EPawnGlobalStance::Unarmed;
-	UPROPERTY(BlueprintReadWrite, Replicated, EditAnywhere, Category = "Movement Settings | State")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Replicated, Category = "Movement Settings | State")
 	ELocomotionMode LocomotionMode = ELocomotionMode::Grounded;
-	UPROPERTY(BlueprintReadWrite, Replicated, EditAnywhere, Category = "Movement Settings | State")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Replicated, Category = "Movement Settings | State")
 	EOverlayState OverlayState = EOverlayState::Katana;
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GAS | Tags")
 	FGameplayTag WeaponHitTag;
@@ -241,11 +241,12 @@ protected:
 	void UpdateGroundedRotation(float DeltaTime);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UBaseAttributeSet> HealthAttribute = nullptr;
+	TObjectPtr<UBaseAttributeSet> HealthAttribute;
 
 	void AddStartupGameplayAbilities();
 
 public:
+	virtual void Jump() override;
 	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -266,11 +267,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void JumpAction(bool bValue);
 	UFUNCTION(BlueprintCallable)
-	virtual void EquipWeapon(const int32 Index);
+	virtual void EquipWeaponAction(const int32 Index);
 	UFUNCTION(BlueprintCallable)
-	virtual void NextWeapon();
+	virtual void NextWeaponAction();
 	UFUNCTION(BlueprintCallable)
-	virtual void PrevWeapon();
+	virtual void PrevWeaponAction();
 	// Maybe, this function is not need to be override
 	UFUNCTION(BlueprintCallable)
 	virtual void SprintAction();
@@ -278,7 +279,11 @@ public:
 	void AimAction();
 	UFUNCTION(BlueprintCallable)
 	void PlayAttackAnimation(TMap<EWeaponType, FMontageGlobalState> MontageMap);
-	
+	UFUNCTION(BlueprintCallable)
+	void DisableGravity();
+	UFUNCTION(BlueprintCallable)
+	void EnableGravity(float Gravity);
+
 	void SetMovementProfile(EMovementProfile NewMovementProfile, bool bForce = false);
 	void SetGlobalStance(EPawnGlobalStance NewGlobalStance, bool bForce = false);
 	void SetRotationMode(ERotationMode NewRotationMode, bool bForce = false);
@@ -351,7 +356,7 @@ public:
 	virtual float GetDamage();
 
 	UFUNCTION(Server, Reliable)
-	void Server_SetIsPlayingAnimation(bool bAttack);
+	void Server_SetIsPlayingAnimation(bool bPlayingAnimation);
 
 	UFUNCTION()
 	void SetIsPlayingAnimation(bool bPlayingAnimation);
@@ -365,12 +370,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Delegates")
 	FOnCharacterDeath CharacterDeathDelegate;
 	FOnCharacterDeathNative CharacterDeathNative;
-
+	FOnMontageBlendingOutStarted BlendingOutDelegate;
+	FOnMontageEnded MontageEndedDelegate;
+	
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable)
 	void OnDeath();
 	void OnDeathNative();
 	
-	void SetMovementModel();
+	void InitMovementModel();
 	
 	FMovementProfileSettings GetTargetMovementSettings() const;
 
@@ -380,5 +387,8 @@ public:
 	 * @param	MontageMap		The string to log out
 	 */
 	UFUNCTION(BlueprintCallable)
-	UAnimMontage* GetMontageFromWeaponMap(TMap<EWeaponType, FMontageGlobalState> MontageMap);		
+	UAnimMontage* GetMontageFromWeaponMap(TMap<EWeaponType, FMontageGlobalState> MontageMap);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure)
+	UAnimMontage* GetMontageByDirection(const FMontageDirection MontageDirection);
 };

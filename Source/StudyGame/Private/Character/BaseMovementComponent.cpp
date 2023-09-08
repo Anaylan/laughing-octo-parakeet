@@ -8,17 +8,36 @@
 UBaseMovementComponent::UBaseMovementComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	bRunPhysicsWithNoController = true;
+	
+	bTickBeforeOwner = true;
+	
 	BrakingFrictionFactor = 0.f;
 	BrakingDecelerationWalking = 2.f;
+	
 	GravityScale = 1.75f;
 	JumpZVelocity = 700.f;
 	BrakingDecelerationFalling = 500.f;
 	BrakingDecelerationWalking = 1100.f;
 	MaxAcceleration = 1500.f;
+	// bUseSeparateBrakingFriction = true;
 
-	bUseSeparateBrakingFriction = true;
+	bCanWalkOffLedgesWhenCrouching = true;
+	
+	bNetworkAlwaysReplicateTransformUpdateTimestamp = true;
+	
+	bIgnoreBaseRotation = true;
+
+	PerchRadiusThreshold = 20.f;
+	PerchAdditionalHeight = 0.0f;
+	LedgeCheckThreshold = 0.f;
+	
+	FallingLateralFriction = 1.f;
+	JumpOffJumpZFactor = 0.0f;
 	
 	NavAgentProps.bCanCrouch = true;
+	NavAgentProps.bCanFly = true;
+	bUseAccelerationForPaths = true;
 }
 
 bool UBaseMovementComponent::CanCrouchInCurrentState() const

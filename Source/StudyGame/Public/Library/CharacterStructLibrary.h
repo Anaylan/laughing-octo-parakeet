@@ -17,22 +17,30 @@ struct FMovementProfileSettings
 	GENERATED_BODY()
 
 private:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed", meta = (AllowPrivateAccess = true, ClampMin="0", UIMin="0", ForceUnits="cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Speed", meta = (AllowPrivateAccess = true, ClampMin="0", UIMin="0", ForceUnits="cm"))
 	float WalkSpeed = 150.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed", meta = (AllowPrivateAccess = true, ClampMin="0", UIMin="0", ForceUnits="cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Speed", meta = (AllowPrivateAccess = true, ClampMin="0", UIMin="0", ForceUnits="cm"))
 	float RunSpeed = 275.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed", meta = (AllowPrivateAccess = true, ClampMin="0", UIMin="0", ForceUnits="cm"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Speed", meta = (AllowPrivateAccess = true, ClampMin="0", UIMin="0", ForceUnits="cm"))
 	float SprintSpeed = 650.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Curve", meta = (AllowPrivateAccess = true))
-	TObjectPtr<UCurveVector> MovementCurve = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Curve", meta = (AllowPrivateAccess = true))
+	TSoftObjectPtr<UCurveVector> MovementCurve;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Curve", meta = (AllowPrivateAccess = true))
+	TSoftObjectPtr<UCurveFloat> RotationCurve;
 public:
 
 	UCurveVector* GetMovementCurve() const
 	{
-		return MovementCurve;
+		return MovementCurve.LoadSynchronous();
+	}
+
+	UCurveFloat* GetRotationCurve() const
+	{
+		return RotationCurve.LoadSynchronous();
 	}
 	
 	float GetSpeedForMovementProfile(EMovementProfile MovementProfile) const
@@ -172,6 +180,9 @@ struct FMovementSettings : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FMovementProfileSettings LookingDirection;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FMovementProfileSettings VelocityDirection;
 };
 
 USTRUCT(BlueprintType)
@@ -254,4 +265,34 @@ struct FCharacterCurveNames
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FName NAME_EnableFootIK_L = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct FIKHandSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName LeftHandIK = FName(TEXT("ik_hand_l"));
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName RightHandIK = FName(TEXT("ik_hand_r"));
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName WeaponSocketL = FName(TEXT("Weapon_L"));
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName WeaponSocketR = FName(TEXT("Weapon_R"));
+};
+
+USTRUCT(BlueprintType)
+struct FIKHandValues
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FVector HandLocationL = FVector::ZeroVector;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FVector HandLocationR = FVector::ZeroVector;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FRotator HandRotationR = FRotator::ZeroRotator;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FRotator HandRotationL = FRotator::ZeroRotator;
 };

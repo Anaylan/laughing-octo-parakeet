@@ -4,6 +4,7 @@
 #include "Character/BaseCharacter.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "KismetAnimationLibrary.h"
 #include "Components/BaseAbilitySystemComponent.h"
 #include "Character/BaseMovementComponent.h"
 #include "Components/IKFootComponent.h"
@@ -15,6 +16,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Library/AbilityEnumLibrary.h"
+#include "Library/MathBlueprintFunctionLibrary.h"
 #include "Library/StructEnumLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapons/BaseWeapon.h"
@@ -31,7 +33,8 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer)
 	bAbilitiesInitialized = false;
 	
 	bUseControllerRotationRoll = bUseControllerRotationPitch = bUseControllerRotationYaw = false;
-
+	bClientCheckEncroachmentOnNetUpdate = true;
+	
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 300.f, 0.f);
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -74,6 +77,16 @@ bool ABaseCharacter::CanEquipWeapon(ABaseWeapon* WeaponToEquip)
 	return true;
 }
 
+void ABaseCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+}
+
+void ABaseCharacter::NotifyJumpApex()
+{
+	Super::NotifyJumpApex();
+}
+
 void ABaseCharacter::PlayAbilityMontage_Implementation(UAnimMontage* MontageToPlay)
 {
 	if (!MontageToPlay) return;
@@ -90,9 +103,7 @@ void ABaseCharacter::PlayAbilityMontage_Implementation(UAnimMontage* MontageToPl
 	if (Duration > 0.f)
 	{
 		AnimInstance->Montage_JumpToSection(SectionName, MontageToPlay);
-		
 		MontageAbilityIndex++;
-
 		GetWorld()->GetTimerManager().SetTimer(MontageTimer, [this]() { MontageAbilityIndex = 0; },
 			ResetATKMontageDelay + MontageToPlay->GetSectionLength(MontageAbilityIndex), false);
 	}
@@ -203,9 +214,7 @@ void ABaseCharacter::BeginPlay()
 	SetReplicateMovement(true);
 	
 	InitMovementStates();
-	SetMovementModel();
-
-	CharacterDeathNative.AddUObject(this, &ThisClass::OnDeathNative);
+	InitMovementModel();
 
 	// TODO: Implement character allies or NPC tag
 	if (!IsLocallyControlled())
@@ -227,12 +236,14 @@ void ABaseCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorld()->GetTimerManager().ClearAllTimersForObject(this);
 	
 	WeaponIndex = NULL;
-	WeaponChangedDelegate.RemoveAll(this);
 	
-	if (CurrentWeapon)
+	for (ABaseWeapon* WeaponClass: Weapons)
 	{
-		CurrentWeapon->Destroy();
+		if (!WeaponClass) continue;
+		WeaponClass->MarkAsGarbage();
 	}
+
+	if (CurrentWeapon) CurrentWeapon->MarkAsGarbage();
 }
 
 void ABaseCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
@@ -357,9 +368,9 @@ float ABaseCharacter::GetDamage()
 	return HealthAttribute ? HealthAttribute->GetDamage() : 0.f;
 }
 
-void ABaseCharacter::Server_SetIsPlayingAnimation_Implementation(bool bAttack)
+void ABaseCharacter::Server_SetIsPlayingAnimation_Implementation(bool bPlayingAnimation)
 {
-	SetIsPlayingAnimation(bAttack);
+	SetIsPlayingAnimation(bPlayingAnimation);
 }
 
 void ABaseCharacter::SetIsPlayingAnimation(bool bPlayingAnimation)
@@ -383,9 +394,9 @@ void ABaseCharacter::OnDeathNative()
 	}
 }
 
-void ABaseCharacter::SetMovementModel()
+void ABaseCharacter::InitMovementModel()
 {
-	if (!IsValid(MovementTable.DataTable) || MovementTable.RowName == NAME_None) return;
+	if (!IsValid(MovementTable.DataTable) || MovementTable.RowName.IsNone()) return;
 	const FString ContextString = GetFullName();
 	const FMovementSettings* Row = MovementTable.DataTable->FindRow<FMovementSettings>(MovementTable.RowName,
 		ContextString);
@@ -400,6 +411,10 @@ FMovementProfileSettings ABaseCharacter::GetTargetMovementSettings() const
 	{
 		return MovementData.LookingDirection;
 	}
+	if (RotationMode == ERotationMode::Velocity)
+	{
+		return MovementData.VelocityDirection;
+	}
 
 	return MovementData.LookingDirection;
 }
@@ -409,7 +424,7 @@ UAnimMontage* ABaseCharacter::GetMontageFromWeaponMap(TMap<EWeaponType, FMontage
 	if (!IsValid(CurrentWeapon) || MontageMap.IsEmpty()) return nullptr;
 	
 	EWeaponType WType = CurrentWeapon->GetType();
-	if (FMontageGlobalState* Montage = MontageMap.Find(WType))
+	if (const FMontageGlobalState* Montage = MontageMap.Find(WType))
 	{
 		if (MovementComponent->IsFalling() && Montage->InAir) return Montage->InAir;
 		if (MovementComponent->IsMovingOnGround() && Montage->OnGround) return Montage->OnGround;
@@ -419,6 +434,23 @@ UAnimMontage* ABaseCharacter::GetMontageFromWeaponMap(TMap<EWeaponType, FMontage
 		*UStructEnumLibrary::EnumToString<EMovementMode>(MovementComponent->MovementMode))
 #endif
 	return nullptr;
+}
+
+UAnimMontage* ABaseCharacter::GetMontageByDirection(const FMontageDirection MontageDirection)
+{
+	const EMovementDirection Dir = UMathBlueprintFunctionLibrary::CalculateMovementDirection(70.f, 130.f,
+		-70.f, -130.f, UKismetAnimationLibrary::CalculateDirection(GetVelocity(), GetActorRotation()));
+	switch (Dir)
+	{
+	case EMovementDirection::Right:
+		return MontageDirection.Right.LoadSynchronous();
+	case EMovementDirection::Backward:
+		return MontageDirection.Left.LoadSynchronous();
+	case EMovementDirection::Left:
+		return MontageDirection.Backward.LoadSynchronous();
+	default:
+		return MontageDirection.Forward.LoadSynchronous();
+	}
 }
 
 void ABaseCharacter::InitMovementStates()
@@ -435,18 +467,18 @@ void ABaseCharacter::UpdateEssentialVariables(float DeltaTime)
 
 	const FVector CurVelocity = GetVelocity();
 
-	Speed = static_cast<float>(CurVelocity.Size2D());
+	Speed = UE_REAL_TO_FLOAT(CurVelocity.Size2D());
 
 	const FVector NewAcceleration = (CurVelocity - PreviousVelocity) / DeltaTime;
 	Acceleration = NewAcceleration.IsNearlyZero() || IsLocallyControlled() ? NewAcceleration : Acceleration;
 	
-	const float CurAccel = static_cast<float>(Acceleration.Size2D());
+	const float CurAccel = UE_REAL_TO_FLOAT(Acceleration.Size2D());
 	const float MaxAccel = MovementComponent->GetMaxAcceleration();
 	
 	bHasMovementInput = (CurAccel / MaxAccel) > 0.f;
 	bIsMoving = Speed > 0.f;
 	
-	AimYawRate = static_cast<float>(FMath::Abs((AimingRotation.Yaw - PreviousAimYaw) / DeltaTime));
+	AimYawRate = UE_REAL_TO_FLOAT(FMath::Abs((AimingRotation.Yaw - PreviousAimYaw) / DeltaTime));
 }
 
 FCollisionQueryParams ABaseCharacter::GetIgnoreCharacterParams() const
@@ -475,20 +507,22 @@ void ABaseCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
-	if (!AbilitySystemComponent) return;
-	AbilitySystemComponent->InitAbilityActorInfo(this, this);
-
-	if (InputComponent)
+	if (AbilitySystemComponent)
 	{
-		const FGameplayAbilityInputBinds Binds(
-			"Confirm",
-			"Canceled",
-			FTopLevelAssetPath(GetPathNameSafe(
-				UClass::TryFindTypeSlow<UEnum>("/Script/StudyGame.EAbilityTypeInputID"))),
-			static_cast<int32>(EAbilityTypeInputID::Confirm),
-			static_cast<int32>(EAbilityTypeInputID::Canceled));
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		
+		if (InputComponent)
+		{
+			const FGameplayAbilityInputBinds Binds(
+				"Confirm",
+				"Canceled",
+				FTopLevelAssetPath(GetPathNameSafe(
+					UClass::TryFindTypeSlow<UEnum>("/Script/StudyGame.EAbilityTypeInputID"))),
+				StaticCast<int32>(EAbilityTypeInputID::Confirm),
+				StaticCast<int32>(EAbilityTypeInputID::Canceled));
 
-		AbilitySystemComponent->BindAbilityActivationToInputComponent(InputComponent, Binds);
+			AbilitySystemComponent->BindAbilityActivationToInputComponent(InputComponent, Binds);
+		}
 	}
 }
 
@@ -540,6 +574,19 @@ float ABaseCharacter::GetAnimCurveValue(const FName CurveName)
 	return 0.0f;
 }
 
+void ABaseCharacter::DisableGravity()
+{
+	MovementComponent->GravityScale = 0.f;
+	MovementComponent->StopMovementKeepPathing();
+	// TODO: Remove root motion add LaunchCharacter() or AddMovementInput(), it's allow use this ability with sprint or long dash
+}
+
+void ABaseCharacter::EnableGravity(float Gravity)
+{
+	MovementComponent->GravityScale = Gravity;
+}
+
+#pragma region InputActions
 void ABaseCharacter::UseAbility(bool bIsPressed, const EAbilityTypeInputID AbilityTypeInputID)
 {
 	if (!AbilitySystemComponent) return;
@@ -554,7 +601,6 @@ void ABaseCharacter::UseAbility(bool bIsPressed, const EAbilityTypeInputID Abili
 	}
 }
 
-#pragma region InputActions
 void ABaseCharacter::JumpAction(bool bValue)
 {	
 	if (bValue)
@@ -567,7 +613,7 @@ void ABaseCharacter::JumpAction(bool bValue)
 	}
 }
 
-void ABaseCharacter::EquipWeapon(const int32 Index)
+void ABaseCharacter::EquipWeaponAction(const int32 Index)
 {
 	if (!Weapons.IsValidIndex(Index) || CurrentWeapon == Weapons[Index]) return;
 	
@@ -584,16 +630,16 @@ void ABaseCharacter::EquipWeapon(const int32 Index)
 	}
 }
 
-void ABaseCharacter::NextWeapon()
+void ABaseCharacter::NextWeaponAction()
 {
 	const int32 Index = Weapons.IsValidIndex(WeaponIndex + 1) ? WeaponIndex + 1 : 0;
-	EquipWeapon(Index);
+	EquipWeaponAction(Index);
 }
 
-void ABaseCharacter::PrevWeapon()
+void ABaseCharacter::PrevWeaponAction()
 {
 	const int32 Index = Weapons.IsValidIndex(WeaponIndex - 1) ? WeaponIndex - 1 : Weapons.Num() - 1;
-	EquipWeapon(Index);
+	EquipWeaponAction(Index);
 }
 
 void ABaseCharacter::MoveAction(FVector2D Value)
@@ -618,8 +664,6 @@ void ABaseCharacter::SprintAction()
 {
 	if (MovementProfile != EMovementProfile::Sprint)
 	{
-		// TODO: Implement dash as initial transition to sprint
-		
 		SetRotationMode(ERotationMode::Looking);
 		SetMovementProfile(EMovementProfile::Sprint);
 	}
@@ -627,7 +671,6 @@ void ABaseCharacter::SprintAction()
 	{
 		SetMovementProfile(EMovementProfile::Running);
 		SetRotationMode(PreviousRotationMode);
-		// Broadcast delegate about change state
 	}
 }
 
@@ -646,14 +689,14 @@ void ABaseCharacter::AimAction()
 	}
 }
 
-void ABaseCharacter::PlayAttackAnimation(TMap<EWeaponType, FMontageGlobalState> MontageMap)
+void ABaseCharacter::PlayAttackAnimation(const TMap<EWeaponType, FMontageGlobalState> MontageMap)
 {
 	if (IsLocallyControlled())
 	{
 		AbilityMontage = GetMontageFromWeaponMap(MontageMap);
 		
 		// Called replicated function in server
-		Server_PlayAbilityMontage(AbilityMontage);
+		Server_PlayAbilityMontage(AbilityMontage.LoadSynchronous());
 	}
 }
 
@@ -668,7 +711,6 @@ void ABaseCharacter::WalkAction()
 		SetMovementProfile(EMovementProfile::Running);
 	}
 }
-
 #pragma endregion InputActions
 
 #pragma region MovementProfile
@@ -744,7 +786,7 @@ void ABaseCharacter::Server_SetRotationMode_Implementation(ERotationMode NewRota
 }
 #pragma endregion RotationMode
 
-#pragma region WeaponSystem
+#pragma region GlobalStance
 void ABaseCharacter::SetGlobalStance(EPawnGlobalStance NewGlobalStance, bool bForce)
 {
 	if (NewGlobalStance != GlobalStance)
@@ -762,7 +804,7 @@ void ABaseCharacter::Server_SetGlobalStance_Implementation(EPawnGlobalStance New
 {
 	SetGlobalStance(NewGlobalStance);
 }
-#pragma endregion WeaponSystem
+#pragma endregion GlobalStance
 
 #pragma region AbilitySystem
 void ABaseCharacter::HandleDamage(float InDamage, const FHitResult& HitResult, const FGameplayTagContainer& DamageTags,
@@ -792,31 +834,43 @@ void ABaseCharacter::HandleHealthChanged(float Delta, const FGameplayTagContaine
 
 void ABaseCharacter::HandlePunch_Implementation()
 {
-	TArray<AActor*> ActorsArray;
+	TArray<FHitResult> OutHits;
+	UCapsuleComponent* CachedCollision = GetCurrentWeapon()->GetCollision();
+	FVector Start = CachedCollision->GetComponentLocation() -
+		CachedCollision->GetComponentRotation().UnrotateVector({0.f, 0.f, 
+		CachedCollision->GetScaledCapsuleHalfHeight()});
 	
-	GetCurrentWeapon()->GetCollision()->GetOverlappingActors(ActorsArray, ABaseCharacter::StaticClass());
-	
-	if (ActorsArray.Num() > 0)
-	{
-		for (AActor* Actor : ActorsArray)
-		{
-			if (Actor &&
-				Actor != this &&
-				(Actor->ActorHasTag("Enemy") || Actor->ActorHasTag("Destroyable")))
-			{
+	FVector End = CachedCollision->GetComponentLocation() +
+		CachedCollision->GetComponentRotation().UnrotateVector({0.f, 0.f, 
+		CachedCollision->GetScaledCapsuleHalfHeight()});
 
+	FCollisionShape CollisionShape;
+	CollisionShape.SetCapsule(CachedCollision->GetScaledCapsuleRadius() + .5f,
+							CachedCollision->GetScaledCapsuleHalfHeight() + .5f);
+	
+	if (GetWorld()->SweepMultiByChannel(OutHits, Start, End, FQuat::Identity,
+		ECC_WorldDynamic, CollisionShape))
+	{
+		for (FHitResult HitResult : OutHits)
+		{
+			if (AActor* Actor = HitResult.GetActor(); Actor &&
+				Actor != this &&
+				(Actor->ActorHasTag("Enemy") || Actor->ActorHasTag("Destroyable")) &&
+				!Actor->IsA(ABaseWeapon::StaticClass()))
+			{
+				DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 7.f, 3, FColor::Green, false, 10.f);
 				// don't punch if dead
 				if (Cast<IAbilitySystemInterface>(Actor)->GetAbilitySystemComponent()->HasMatchingGameplayTag(
 					IsDeadTag))
 				{
 					continue;
 				}
-				
+			
 				FGameplayEventData Payload = FGameplayEventData();
 				Payload.Instigator = GetInstigator();
 				Payload.Target = Actor;
 				Payload.TargetData = UAbilitySystemBlueprintLibrary::AbilityTargetDataFromActor(Actor);
-				
+			
 				UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetInstigator(), WeaponHitTag, Payload);
 
 				if (!IsDataAbilitySend) IsDataAbilitySend = true;
@@ -831,11 +885,11 @@ void ABaseCharacter::AddStartupGameplayAbilities()
 
 	if (HasAuthority() && !bAbilitiesInitialized)
 	{
-		for (TSubclassOf<UBaseGameplayAbility> Ability: GameplayAbilities)
+		for (TPair<EAbilityTypeInputID, TSubclassOf<UBaseGameplayAbility>> Ability: StandardAbilities)
 		{
 			AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(
-				Ability, 1,
-				static_cast<int32>(Ability.GetDefaultObject()->AbilityTypeID),
+				Ability.Value, 1,
+				static_cast<int32>(Ability.Key),
 				this));
 		}
 
@@ -856,5 +910,12 @@ void ABaseCharacter::AddStartupGameplayAbilities()
 
 		bAbilitiesInitialized = true;
 	}
+}
+
+void ABaseCharacter::Jump()
+{
+	Super::Jump();
+
+	StopAnimMontage();
 }
 #pragma endregion AbilitySystem

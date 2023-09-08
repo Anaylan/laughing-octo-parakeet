@@ -4,10 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Library/CharacterStructLibrary.h"
 #include "IKHandComponent.generated.h"
 
 
-class UCombatComponent;
 class ABaseCharacter;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
@@ -22,14 +22,24 @@ public:
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	uint8 bCanUpdate:1;
 
 	TWeakObjectPtr<ABaseCharacter> CachedCharacter = nullptr;
 	TWeakObjectPtr<USkeletalMeshComponent> MeshComponent = nullptr; 
-	TWeakObjectPtr<UCombatComponent> CombatComponent = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FIKHandSettings HandSettings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FIKHandValues HandValues;
 	
 public:	
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	void UpdateHandTransform(FName SocketName, float DeltaTime);
+	void UpdateHandLocationAndRotation(FName HandSocket, FName WeaponSocket, FVector& CurHandLocation, FRotator& CurHandRotation);
+
+	FIKHandValues GetProperties() const { return HandValues; }
 };

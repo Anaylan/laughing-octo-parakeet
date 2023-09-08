@@ -11,6 +11,7 @@
 #include "CharacterAnimInstance.generated.h"
 
 
+class UIKHandComponent;
 class UIKFootComponent;
 class ABaseCharacter;
 class ABaseWeapon;
@@ -40,15 +41,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
 	uint8 bCanPlayDynamicTransition:1;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
-	float Direction = 0.f;
-
+	float CurrentDirection = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement Information")
+	int32 JumpCount = 0;
+	
 	/*************
 	 * References
 	 ************/
 	UPROPERTY(Transient, BlueprintReadOnly)
 	TWeakObjectPtr<UIKFootComponent> IKFootComponent = nullptr;
 	UPROPERTY(Transient, BlueprintReadOnly)
-	TWeakObjectPtr<ABaseCharacter> CharacterOwner = nullptr;
+	TWeakObjectPtr<UIKHandComponent> IKHandComponent = nullptr;
+	UPROPERTY(Transient, BlueprintReadOnly)
+	TWeakObjectPtr<ABaseCharacter> CachedCharacter = nullptr;
 	UPROPERTY(Transient, BlueprintReadOnly)
 	TWeakObjectPtr<UBaseMovementComponent> MovementComponent = nullptr;
 	UPROPERTY(Transient, EditAnywhere, BlueprintReadOnly, Category = "Curve")
@@ -57,9 +62,6 @@ protected:
 	TObjectPtr<UCurveFloat> RunCurveFloat = nullptr;
 	UPROPERTY(BlueprintReadWrite)
 	TObjectPtr<ABaseWeapon> CurrentWeapon = nullptr;
-	
-	FTimerHandle JumpedTimerHandle;
-	FTimerHandle DynamicTransitionTimerHandle;
 
 	/*******************
 	 * Character state
@@ -76,6 +78,8 @@ protected:
 	 ******************/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FIKFootProperties IKFootProperties;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FIKHandValues IKHandProperties;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FFootLockProperties FootLockProperties;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -167,6 +171,9 @@ protected:
 	void SetFootLockOffset(float DeltaTime, FVector& CurFootLockLoc, FRotator& CurFootLockRot);
 	virtual void CurrentWeaponChanged(ABaseWeapon* NewWeapon, const ABaseWeapon* OldWeapon);
 
+
+	UFUNCTION()
+	void OnLanded(const FHitResult& HitResult) { JumpCount = 0; }
 	FVector CalculateRelativeAcceleration() const;
 	
 	// Update character information
@@ -174,17 +181,12 @@ protected:
 	void UpdateWalkRunBlend(float DeltaSeconds);
 	void UpdateLayerVariable();
 	
-	void CalculateWeaponSway(const float DeltaTime);
-	FTransform CalculateRelativeCameraTransform();
-	
 	// Update grounded state
 	void UpdateGrounded(float DeltaSeconds);
 	
-	// Methods for getting variables from UIKFootComponent
+	// Methods for getting variables to inverse kinematics
 	void InitIK();
 	void UpdateIK();
-
-	void UpdateFootLock(FName FootSocket);
 
 	UFUNCTION(BlueprintCallable)
 	void PlayTransition(const FDynamicMontageParams& Params);
@@ -199,7 +201,6 @@ protected:
 	float CalculateWalkRun() const;
 	float CalculateStandingPlayRate() const;
 	FVector2D CalculateAimingAngle() const;
-	EMovementDirection CalculateDirection() const;
-
+	EMovementDirection CalculateDirectionBlend();
 	void CalculateDirectionBlend(FMovementDirectionBlend& CurBlend, float DeltaTime, float InterpSpeed);
 };

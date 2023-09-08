@@ -87,8 +87,8 @@ void UIKFootComponent::UpdateFootOffset(FHitResult HitResult, FName SocketName, 
 {
 	FVector TargetLocation;
 
-	FVector CurLocation = MeshComponent->GetSocketLocation(SocketName);
-	CurLocation.Z = MeshComponent->GetSocketLocation(UCharacterAnimInstance::NAME_RootBone).Z;
+	FVector CurLocation = MeshComponent->GetBoneLocation(SocketName);
+	CurLocation.Z = MeshComponent->GetBoneLocation(UCharacterAnimInstance::NAME_RootBone).Z;
 
 	if (CharacterOwner->GetCharacterMovement()->IsWalkable(HitResult))
 	{

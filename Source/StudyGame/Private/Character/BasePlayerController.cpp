@@ -49,7 +49,7 @@ void ABasePlayerController::OnRep_Pawn()
 {
 	Super::OnRep_Pawn();
 
-	PossessedCharacter = StaticCast<ABaseCharacter*>(GetPawn());
+	PossessedCharacter = Cast<ABaseCharacter>(GetPawn());
 
 	SetupInput();
 }
@@ -168,7 +168,7 @@ void ABasePlayerController::IA_NextWeapon(const FInputActionValue& Value) const
 {
 	if (PossessedCharacter)
 	{
-		PossessedCharacter->NextWeapon();
+		PossessedCharacter->NextWeaponAction();
 	}
 }
 
@@ -176,7 +176,7 @@ void ABasePlayerController::IA_PrevWeapon(const FInputActionValue& Value) const
 {
 	if (PossessedCharacter)
 	{
-		PossessedCharacter->PrevWeapon();
+		PossessedCharacter->PrevWeaponAction();
 	}
 }
 
@@ -194,5 +194,13 @@ void ABasePlayerController::IA_JumpAttack(const FInputActionValue& Value) const
 	if (PossessedCharacter)
 	{
 		PossessedCharacter->UseAbility(Value.Get<bool>(), EAbilityTypeInputID::IA_JumpAttack);
+	}
+}
+
+void ABasePlayerController::IA_Dash(const FInputActionValue& Value) const
+{
+	if (PossessedCharacter)
+	{
+		PossessedCharacter->UseAbility(Value.Get<bool>(), EAbilityTypeInputID::IA_Dash);
 	}
 }

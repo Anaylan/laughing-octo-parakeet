@@ -3,6 +3,8 @@
 
 #include "Components/IKHandComponent.h"
 
+#include "Character/BaseCharacter.h"
+
 // Sets default values for this component's properties
 UIKHandComponent::UIKHandComponent()
 {
@@ -16,17 +18,43 @@ UIKHandComponent::UIKHandComponent()
 void UIKHandComponent::BeginPlay()
 {
 	Super::BeginPlay();
-}
 
+	CachedCharacter = StaticCast<ABaseCharacter*>(GetOwner());
+	if (!CachedCharacter.IsValid()) return;
+
+	MeshComponent = StaticCast<USkeletalMeshComponent*>(CachedCharacter->GetMesh());
+	if (!MeshComponent.IsValid()) return;
+}
 
 // Called every frame
 void UIKHandComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!CachedCharacter.IsValid()) return;
+	if (!MeshComponent.IsValid()) return;
+	
+	if (!bCanUpdate) return;
+	
+	UpdateHandLocationAndRotation(HandSettings.LeftHandIK, HandSettings.WeaponSocketL, 
+		HandValues.HandLocationL, HandValues.HandRotationL);
+	UpdateHandLocationAndRotation(HandSettings.RightHandIK, HandSettings.WeaponSocketR, 
+		HandValues.HandLocationR, HandValues.HandRotationR);
 }
 
-void UIKHandComponent::UpdateHandTransform(FName SocketName, float DeltaTime)
+void UIKHandComponent::UpdateHandLocationAndRotation(FName HandSocket, FName WeaponSocket, FVector& CurHandLocation, FRotator& CurHandRotation)
 {
-	// FTransform WeaponTransform = MeshComponent->GetSocketTransform(SocketName);
+	FVector HandLocation = MeshComponent->GetBoneLocation(HandSocket);
+	FQuat HandRotation = MeshComponent->GetBoneQuaternion(HandSocket);
+	
+	FVector WeaponLocation = MeshComponent->GetSocketLocation(WeaponSocket);
+
+	// GetDirector from hand to weapon
+	FVector ArmDirection = WeaponLocation - HandLocation;
+	ArmDirection.Normalize();
+
+	CurHandRotation = FQuat::Slerp(HandRotation, FQuat::FindBetweenVectors(FVector::ForwardVector, ArmDirection),
+		20.f).Rotator();
+	CurHandLocation = HandLocation + (WeaponLocation - HandLocation);
 }
 
